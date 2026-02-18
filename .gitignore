@@ -1,0 +1,75 @@
+# Browser Extension .gitignore
+
+# Compressed packages
+*.zip
+*.crx
+*.xpi
+
+# Backup files
+*.backup
+*.backup2
+*-old.*
+*.bak
+*.tmp
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# Node modules (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+logs/
+*.log
+
+# Test files
+test/
+tests/
+*.test.js
+*.spec.js
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# API keys (just in case)
+secrets.json
+config.private.json
+
+# Build artifacts (if using build tools)
+dist/
+build/
+.cache/
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# MacOS specific
+.AppleDouble
+.LSOverride
