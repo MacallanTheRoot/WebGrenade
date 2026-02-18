@@ -444,35 +444,72 @@ function generateQRCode(url) {
   container.textContent = '';
   
   try {
-    new QRCode(container, {
-      text: url,
-      width: 200,
-      height: 200,
-      colorDark: "#000000",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.H
+    // Use secure API-based QR code generation (no innerHTML)
+    const qrImage = document.createElement('img');
+    qrImage.setAttribute('alt', 'QR Code');
+    qrImage.setAttribute('width', '200');
+    qrImage.setAttribute('height', '200');
+    qrImage.style.border = '1px solid #333';
+    qrImage.style.borderRadius = '8px';
+    
+    // Use QR Server API for secure image generation
+    const apiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+    qrImage.src = apiUrl;
+    qrImage.dataset.qrUrl = url; // Store URL for download functionality
+    
+    // Add loading state
+    qrImage.addEventListener('load', () => {
+      qrImage.style.opacity = '1';
     });
+    
+    qrImage.addEventListener('error', () => {
+      container.textContent = '';
+      const errorDiv = document.createElement('div');
+      errorDiv.style.cssText = 'color: #ef4444; font-size: 13px; text-align: center; padding: 20px;';
+      errorDiv.textContent = 'Failed to generate QR code';
+      container.appendChild(errorDiv);
+    });
+    
+    qrImage.style.opacity = '0.5';
+    container.appendChild(qrImage);
   } catch (error) {
     console.error('QR generation error:', error);
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = 'color: #ef4444; font-size: 13px; text-align: center; padding: 20px;';
+    errorDiv.textContent = 'Failed to generate QR code';
+    container.appendChild(errorDiv);
   }
 }
 
-function downloadQRCode() {
-  const canvas = document.querySelector('#qr-container canvas');
-  if (!canvas) {
+async function downloadQRCode() {
+  const qrImage = document.querySelector('#qr-container img');
+  if (!qrImage || !qrImage.dataset.qrUrl) {
     showToast('No QR code to download', 'error');
     return;
   }
   
-  canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
+  try {
+    // Fetch the QR code image from API
+    const qrUrl = qrImage.dataset.qrUrl;
+    const apiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qrUrl)}`;
+    
+    const response = await fetch(apiUrl);
+    if (!response.ok) throw new Error('Failed to fetch QR code');
+    
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    
     const a = document.createElement('a');
-    a.href = url;
+    a.href = blobUrl;
     a.download = 'qrcode.png';
     a.click();
-    URL.revokeObjectURL(url);
+    
+    URL.revokeObjectURL(blobUrl);
     showToast('✅ QR code downloaded!', 'success');
-  });
+  } catch (error) {
+    console.error('QR download error:', error);
+    showToast('❌ Failed to download QR code', 'error');
+  }
 }
 
 async function loadLinkHistory() {

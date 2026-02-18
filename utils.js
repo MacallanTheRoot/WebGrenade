@@ -91,8 +91,8 @@ function estimateFileSize(format, quality) {
    =========================== */
 
 /**
- * Generate QR code using qrcode.js library
- * Creates a QR code in the specified container
+ * Generate QR code using external API (secure, no innerHTML)
+ * Creates a QR code in the specified container using QR Server API
  * @param {string} containerId - ID of the DOM element to render QR code
  * @param {string} text - Text/URL to encode
  * @param {Object} options - QR code options
@@ -110,17 +110,37 @@ function generateQRCode(containerId, text, options = {}) {
     container.textContent = '';
     
     // Default options
-    const qrOptions = {
-      text: text || 'https://example.com',
-      width: options.width || 200,
-      height: options.height || 200,
-      colorDark: options.colorDark || '#000000',
-      colorLight: options.colorLight || '#ffffff',
-      correctLevel: QRCode.CorrectLevel.H  // High error correction
-    };
+    const width = options.width || 200;
+    const height = options.height || 200;
+    const qrText = text || 'https://example.com';
     
-    // Generate QR code
-    new QRCode(container, qrOptions);
+    // Use secure API-based QR code generation
+    const qrImage = document.createElement('img');
+    qrImage.setAttribute('alt', 'QR Code');
+    qrImage.setAttribute('width', String(width));
+    qrImage.setAttribute('height', String(height));
+    qrImage.style.border = '1px solid #333';
+    qrImage.style.borderRadius = '8px';
+    
+    // Use QR Server API for secure image generation
+    const apiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${width}x${height}&data=${encodeURIComponent(qrText)}`;
+    qrImage.src = apiUrl;
+    
+    // Add loading state
+    qrImage.addEventListener('load', () => {
+      qrImage.style.opacity = '1';
+    });
+    
+    qrImage.addEventListener('error', () => {
+      container.textContent = '';
+      const errorDiv = document.createElement('div');
+      errorDiv.style.cssText = 'color: #737373; font-size: 13px; text-align: center; padding: 20px;';
+      errorDiv.textContent = 'Failed to generate QR code';
+      container.appendChild(errorDiv);
+    });
+    
+    qrImage.style.opacity = '0.5';
+    container.appendChild(qrImage);
     
     return true;
   } catch (error) {
