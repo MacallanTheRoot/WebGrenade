@@ -107,7 +107,7 @@ function generateQRCode(containerId, text, options = {}) {
     }
     
     // Clear existing QR code
-    container.innerHTML = '';
+    container.textContent = '';
     
     // Default options
     const qrOptions = {
@@ -128,12 +128,16 @@ function generateQRCode(containerId, text, options = {}) {
     // Show fallback message
     const container = document.getElementById(containerId);
     if (container) {
-      container.innerHTML = `
-        <div style="color: #737373; font-size: 13px; text-align: center; padding: 20px;">
-          QR Code generation failed.<br>
-          Please check console for details.
-        </div>
-      `;
+      container.textContent = '';
+      const errorDiv = document.createElement('div');
+      errorDiv.style.cssText = 'color: #737373; font-size: 13px; text-align: center; padding: 20px;';
+      const line1 = document.createTextNode('QR Code generation failed.');
+      const br = document.createElement('br');
+      const line2 = document.createTextNode('Please check console for details.');
+      errorDiv.appendChild(line1);
+      errorDiv.appendChild(br);
+      errorDiv.appendChild(line2);
+      container.appendChild(errorDiv);
     }
     return false;
   }
@@ -363,13 +367,35 @@ function setButtonLoading(buttonId, loading, originalText = '') {
   if (loading) {
     button.disabled = true;
     button.dataset.originalText = button.textContent;
-    button.innerHTML = `
-      <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" style="animation: spin 0.8s linear infinite;">
-        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" opacity="0.25"/>
-        <path d="M12 2 A10 10 0 0 1 22 12" stroke="currentColor" stroke-width="4" fill="none"/>
-      </svg>
-      Loading...
-    `;
+    button.textContent = '';
+    
+    // Create SVG spinner
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'btn-icon');
+    svg.setAttribute('width', '20');
+    svg.setAttribute('height', '20');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.style.animation = 'spin 0.8s linear infinite';
+    
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', '12');
+    circle.setAttribute('cy', '12');
+    circle.setAttribute('r', '10');
+    circle.setAttribute('stroke', 'currentColor');
+    circle.setAttribute('stroke-width', '4');
+    circle.setAttribute('fill', 'none');
+    circle.setAttribute('opacity', '0.25');
+    
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M12 2 A10 10 0 0 1 22 12');
+    path.setAttribute('stroke', 'currentColor');
+    path.setAttribute('stroke-width', '4');
+    path.setAttribute('fill', 'none');
+    
+    svg.appendChild(circle);
+    svg.appendChild(path);
+    button.appendChild(svg);
+    button.appendChild(document.createTextNode(' Loading...'));
   } else {
     button.disabled = false;
     button.textContent = originalText || button.dataset.originalText || 'Continue';

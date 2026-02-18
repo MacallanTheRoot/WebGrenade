@@ -318,22 +318,38 @@ async function loadDownloadHistory() {
   
   if (!historyList) return;
   
+  historyList.textContent = '';
+  
   if (downloadHistory.length === 0) {
-    historyList.innerHTML = '<div class="empty-state">No downloads yet</div>';
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-state';
+    emptyDiv.textContent = 'No downloads yet';
+    historyList.appendChild(emptyDiv);
     return;
   }
   
-  historyList.innerHTML = downloadHistory
-    .slice(-5)
-    .reverse()
-    .map(item => `
-      <div class="history-item">
-        <div class="history-item-content">
-          <div class="history-item-title">${escapeHtml(item.title)}</div>
-          <div class="history-item-meta">${item.format.toUpperCase()} • ${item.quality} • ${formatDate(item.timestamp)}</div>
-        </div>
-      </div>
-    `).join('');
+  const items = downloadHistory.slice(-5).reverse();
+  
+  items.forEach(item => {
+    const historyItem = document.createElement('div');
+    historyItem.className = 'history-item';
+    
+    const content = document.createElement('div');
+    content.className = 'history-item-content';
+    
+    const title = document.createElement('div');
+    title.className = 'history-item-title';
+    title.textContent = item.title;
+    
+    const meta = document.createElement('div');
+    meta.className = 'history-item-meta';
+    meta.textContent = `${item.format.toUpperCase()} • ${item.quality} • ${formatDate(item.timestamp)}`;
+    
+    content.appendChild(title);
+    content.appendChild(meta);
+    historyItem.appendChild(content);
+    historyList.appendChild(historyItem);
+  });
 }
 
 async function addToDownloadHistory(item) {
@@ -425,7 +441,7 @@ function generateQRCode(url) {
   const container = document.getElementById('qr-container');
   if (!container) return;
   
-  container.innerHTML = '';
+  container.textContent = '';
   
   try {
     new QRCode(container, {
@@ -465,36 +481,60 @@ async function loadLinkHistory() {
   
   if (!historyList) return;
   
+  historyList.textContent = '';
+  
   if (linkHistory.length === 0) {
-    historyList.innerHTML = '<div class="empty-state">No shortened links yet</div>';
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-state';
+    emptyDiv.textContent = 'No shortened links yet';
+    historyList.appendChild(emptyDiv);
     return;
   }
   
-  historyList.innerHTML = linkHistory
-    .slice(-5)
-    .reverse()
-    .map((item, index) => `
-      <div class="history-item">
-        <div class="history-item-content">
-          <div class="history-item-title">${escapeHtml(item.shortened)}</div>
-          <div class="history-item-meta">${formatDate(item.timestamp)}</div>
-        </div>
-        <div class="history-item-actions">
-          <button class="btn btn-icon link-copy-btn" data-url="${escapeHtml(item.shortened)}" title="Copy">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-          </button>
-          <button class="btn btn-icon btn-danger link-delete-btn" data-index="${linkHistory.length - 1 - index}" title="Delete">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-          </button>
-        </div>
-      </div>
-    `).join('');
+  const items = linkHistory.slice(-5).reverse();
+  
+  items.forEach((item, index) => {
+    const historyItem = document.createElement('div');
+    historyItem.className = 'history-item';
+    
+    const content = document.createElement('div');
+    content.className = 'history-item-content';
+    
+    const title = document.createElement('div');
+    title.className = 'history-item-title';
+    title.textContent = item.shortened;
+    
+    const meta = document.createElement('div');
+    meta.className = 'history-item-meta';
+    meta.textContent = formatDate(item.timestamp);
+    
+    content.appendChild(title);
+    content.appendChild(meta);
+    
+    const actions = document.createElement('div');
+    actions.className = 'history-item-actions';
+    
+    // Copy button
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn btn-icon link-copy-btn';
+    copyBtn.setAttribute('data-url', item.shortened);
+    copyBtn.setAttribute('title', 'Copy');
+    copyBtn.appendChild(createCopyIconSVG());
+    
+    // Delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-icon btn-danger link-delete-btn';
+    deleteBtn.setAttribute('data-index', String(linkHistory.length - 1 - index));
+    deleteBtn.setAttribute('title', 'Delete');
+    deleteBtn.appendChild(createDeleteIconSVG());
+    
+    actions.appendChild(copyBtn);
+    actions.appendChild(deleteBtn);
+    
+    historyItem.appendChild(content);
+    historyItem.appendChild(actions);
+    historyList.appendChild(historyItem);
+  });
 }
 
 async function addToLinkHistory(item) {
@@ -585,21 +625,26 @@ async function loadColorHistory() {
   
   if (!grid) return;
   
+  grid.textContent = '';
+  
   if (colorHistory.length === 0) {
-    grid.innerHTML = '<div class="empty-state">No colors picked yet</div>';
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-state';
+    emptyDiv.textContent = 'No colors picked yet';
+    grid.appendChild(emptyDiv);
     return;
   }
   
-  grid.innerHTML = colorHistory
-    .slice(-10)
-    .reverse()
-    .map(color => `
-      <div class="color-history-item" 
-           style="background-color: ${color};" 
-           data-color="${color}"
-           title="Click to copy ${color}">
-      </div>
-    `).join('');
+  const colors = colorHistory.slice(-10).reverse();
+  
+  colors.forEach(color => {
+    const colorItem = document.createElement('div');
+    colorItem.className = 'color-history-item';
+    colorItem.style.backgroundColor = color;
+    colorItem.setAttribute('data-color', color);
+    colorItem.setAttribute('title', `Click to copy ${color}`);
+    grid.appendChild(colorItem);
+  });
 }
 
 async function addToColorHistory(color) {
@@ -807,38 +852,66 @@ function displayCookies(cookies) {
   
   if (!cookieList) return;
   
+  cookieList.textContent = '';
+  
   if (cookies.length === 0) {
-    cookieList.innerHTML = '<div class="empty-state">No cookies found</div>';
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-state';
+    emptyDiv.textContent = 'No cookies found';
+    cookieList.appendChild(emptyDiv);
     return;
   }
   
-  cookieList.innerHTML = cookies.map((cookie, index) => `
-    <div class="cookie-item">
-      <div class="cookie-item-header">
-        <div class="cookie-item-name">${escapeHtml(cookie.name)}</div>
-        <div class="cookie-item-actions">
-          <button class="btn btn-icon cookie-edit-btn" data-index="${index}" title="Edit">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-            </svg>
-          </button>
-          <button class="btn btn-icon btn-danger cookie-delete-btn" data-index="${index}" title="Delete">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-      </div>
-      <div class="cookie-item-value">${escapeHtml(cookie.value)}</div>
-      <div class="cookie-item-meta">
-        ${cookie.domain} • ${cookie.path} 
-        ${cookie.secure ? '• 🔒 Secure' : ''} 
-        ${cookie.httpOnly ? '• 🚫 HttpOnly' : ''}
-      </div>
-    </div>
-  `).join('');
+  cookies.forEach((cookie, index) => {
+    const cookieItem = document.createElement('div');
+    cookieItem.className = 'cookie-item';
+    
+    const header = document.createElement('div');
+    header.className = 'cookie-item-header';
+    
+    const name = document.createElement('div');
+    name.className = 'cookie-item-name';
+    name.textContent = cookie.name;
+    
+    const actions = document.createElement('div');
+    actions.className = 'cookie-item-actions';
+    
+    // Edit button
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-icon cookie-edit-btn';
+    editBtn.setAttribute('data-index', String(index));
+    editBtn.setAttribute('title', 'Edit');
+    editBtn.appendChild(createEditIconSVG());
+    
+    // Delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-icon btn-danger cookie-delete-btn';
+    deleteBtn.setAttribute('data-index', String(index));
+    deleteBtn.setAttribute('title', 'Delete');
+    deleteBtn.appendChild(createCloseIconSVG());
+    
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+    
+    header.appendChild(name);
+    header.appendChild(actions);
+    
+    const value = document.createElement('div');
+    value.className = 'cookie-item-value';
+    value.textContent = cookie.value;
+    
+    const meta = document.createElement('div');
+    meta.className = 'cookie-item-meta';
+    let metaText = `${cookie.domain} • ${cookie.path}`;
+    if (cookie.secure) metaText += ' • 🔒 Secure';
+    if (cookie.httpOnly) metaText += ' • 🚫 HttpOnly';
+    meta.textContent = metaText;
+    
+    cookieItem.appendChild(header);
+    cookieItem.appendChild(value);
+    cookieItem.appendChild(meta);
+    cookieList.appendChild(cookieItem);
+  });
 }
 
 function filterCookies(query) {
@@ -1170,14 +1243,22 @@ async function loadSavedFeeds() {
   
   if (!feedSelect) return;
   
+  feedSelect.textContent = '';
+  
   if (rssFeeds.length === 0) {
-    feedSelect.innerHTML = '<option value="">No feeds saved</option>';
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No feeds saved';
+    feedSelect.appendChild(option);
     return;
   }
   
-  feedSelect.innerHTML = rssFeeds.map(feed => 
-    `<option value="${feed.url}">${escapeHtml(feed.title || feed.url)}</option>`
-  ).join('');
+  rssFeeds.forEach(feed => {
+    const option = document.createElement('option');
+    option.value = feed.url;
+    option.textContent = feed.title || feed.url;
+    feedSelect.appendChild(option);
+  });
   
   // Load first feed
   if (rssFeeds.length > 0) {
@@ -1249,7 +1330,11 @@ async function fetchRSSFeed(url) {
   
   if (!feedList) return;
   
-  feedList.innerHTML = '<div class="empty-state">Loading feed...</div>';
+  feedList.textContent = '';
+  const loadingDiv = document.createElement('div');
+  loadingDiv.className = 'empty-state';
+  loadingDiv.textContent = 'Loading feed...';
+  feedList.appendChild(loadingDiv);
   
   try {
     // Use background script to fetch (avoids CORS)
@@ -1266,7 +1351,11 @@ async function fetchRSSFeed(url) {
     
   } catch (error) {
     console.error('RSS fetch error:', error);
-    feedList.innerHTML = '<div class="empty-state">❌ Failed to load feed</div>';
+    feedList.textContent = '';
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'empty-state';
+    errorDiv.textContent = '❌ Failed to load feed';
+    feedList.appendChild(errorDiv);
     showToast('❌ Failed to load feed', 'error');
   }
 }
@@ -1276,18 +1365,40 @@ function displayRSSItems(items) {
   
   if (!feedList) return;
   
+  feedList.textContent = '';
+  
   if (!items || items.length === 0) {
-    feedList.innerHTML = '<div class="empty-state">No items in feed</div>';
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-state';
+    emptyDiv.textContent = 'No items in feed';
+    feedList.appendChild(emptyDiv);
     return;
   }
   
-  feedList.innerHTML = items.slice(0, 20).map(item => `
-    <div class="rss-item" data-link="${escapeHtml(item.link)}">
-      <div class="rss-item-title">${escapeHtml(item.title)}</div>
-      <div class="rss-item-description">${escapeHtml(item.description || '')}</div>
-      <div class="rss-item-meta">${item.pubDate ? formatDate(new Date(item.pubDate).getTime()) : ''}</div>
-    </div>
-  `).join('');
+  const displayItems = items.slice(0, 20);
+  
+  displayItems.forEach(item => {
+    const rssItem = document.createElement('div');
+    rssItem.className = 'rss-item';
+    rssItem.setAttribute('data-link', item.link);
+    
+    const title = document.createElement('div');
+    title.className = 'rss-item-title';
+    title.textContent = item.title;
+    
+    const description = document.createElement('div');
+    description.className = 'rss-item-description';
+    description.textContent = item.description || '';
+    
+    const meta = document.createElement('div');
+    meta.className = 'rss-item-meta';
+    meta.textContent = item.pubDate ? formatDate(new Date(item.pubDate).getTime()) : '';
+    
+    rssItem.appendChild(title);
+    rssItem.appendChild(description);
+    rssItem.appendChild(meta);
+    feedList.appendChild(rssItem);
+  });
 }
 
 // ============================================================================
@@ -1492,18 +1603,37 @@ async function updateWhitelistContent() {
   
   const whitelist = await loadWhitelist();
   
+  listContainer.textContent = '';
+  
   if (whitelist.length === 0) {
-    listContainer.innerHTML = '<div class="empty-state">No whitelisted sites</div>';
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-state';
+    emptyDiv.textContent = 'No whitelisted sites';
+    listContainer.appendChild(emptyDiv);
   } else {
-    listContainer.innerHTML = whitelist.map(entry => `
-      <div class="whitelist-item">
-        <div class="whitelist-domain">${escapeHtml(entry.domain)}</div>
-        <div class="whitelist-date">Added: ${new Date(entry.addedAt).toLocaleDateString()}</div>
-        <button class="btn-icon whitelist-remove-btn" data-domain="${escapeHtml(entry.domain)}" title="Remove">
-          🗑️
-        </button>
-      </div>
-    `).join('');
+    whitelist.forEach(entry => {
+      const whitelistItem = document.createElement('div');
+      whitelistItem.className = 'whitelist-item';
+      
+      const domain = document.createElement('div');
+      domain.className = 'whitelist-domain';
+      domain.textContent = entry.domain;
+      
+      const date = document.createElement('div');
+      date.className = 'whitelist-date';
+      date.textContent = `Added: ${new Date(entry.addedAt).toLocaleDateString()}`;
+      
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'btn-icon whitelist-remove-btn';
+      removeBtn.setAttribute('data-domain', entry.domain);
+      removeBtn.setAttribute('title', 'Remove');
+      removeBtn.textContent = '🗑️';
+      
+      whitelistItem.appendChild(domain);
+      whitelistItem.appendChild(date);
+      whitelistItem.appendChild(removeBtn);
+      listContainer.appendChild(whitelistItem);
+    });
   }
 }
 
@@ -2122,10 +2252,106 @@ async function copyToClipboard(text) {
   }
 }
 
+// SVG Icon Helper Functions (avoiding innerHTML)
+function createCopyIconSVG() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', '9');
+  rect.setAttribute('y', '9');
+  rect.setAttribute('width', '13');
+  rect.setAttribute('height', '13');
+  rect.setAttribute('rx', '2');
+  rect.setAttribute('ry', '2');
+  
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1');
+  
+  svg.appendChild(rect);
+  svg.appendChild(path);
+  return svg;
+}
+
+function createDeleteIconSVG() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  
+  const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  polyline.setAttribute('points', '3 6 5 6 21 6');
+  
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2');
+  
+  svg.appendChild(polyline);
+  svg.appendChild(path);
+  return svg;
+}
+
+function createEditIconSVG() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  
+  const path1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path1.setAttribute('d', 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7');
+  
+  const path2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path2.setAttribute('d', 'M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z');
+  
+  svg.appendChild(path1);
+  svg.appendChild(path2);
+  return svg;
+}
+
+function createCloseIconSVG() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  
+  const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line1.setAttribute('x1', '18');
+  line1.setAttribute('y1', '6');
+  line1.setAttribute('x2', '6');
+  line1.setAttribute('y2', '18');
+  
+  const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line2.setAttribute('x1', '6');
+  line2.setAttribute('y1', '6');
+  line2.setAttribute('x2', '18');
+  line2.setAttribute('y2', '18');
+  
+  svg.appendChild(line1);
+  svg.appendChild(line2);
+  return svg;
+}
+
 function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  if (typeof text !== 'string') return String(text);
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function formatDate(timestamp) {
