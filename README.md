@@ -10,6 +10,7 @@
 ![Manifest](https://img.shields.io/badge/manifest-v3-green?style=for-the-badge&logo=webcomponents)
 ![License](https://img.shields.io/badge/license-MIT-orange?style=for-the-badge)
 ![Browser Support](https://img.shields.io/badge/browsers-chrome%20%7C%20firefox-blueviolet?style=for-the-badge)
+[![Firefox Add-on](https://img.shields.io/badge/Firefox-Get%20Add--on-FF6611?style=for-the-badge&logo=firefox-browser)](https://addons.mozilla.org/tr/firefox/addon/webgrenade/)
 
 ---
 
@@ -18,6 +19,12 @@
 Standard browser extensions offer one or two features. **WebGrenade** is different — a complete tactical toolkit for web professionals, developers, and power users who need **instant access to 8+ essential utilities** without cluttering their workflow.
 
 WebGrenade operates entirely **offline-first**. All data stays in `chrome.storage`, nothing leaves your browser. No tracking, no telemetry, no cloud dependencies.
+
+## 📦 Installation
+
+**Get WebGrenade now:**
+- 🦊 [Install from Firefox Add-ons Store](https://addons.mozilla.org/tr/firefox/addon/webgrenade/)
+- 🔧 Or install manually: Download this repository → Open `chrome://extensions` (or `about:debugging#/runtime/this-firefox` for Firefox) → Enable Developer Mode → Load unpacked extension
 
 ---
 
@@ -740,6 +747,7 @@ Copyright © 2026 [MacallanTheRoot](https://github.com/MacallanTheRoot)
 ![Manifest](https://img.shields.io/badge/manifest-v3-green?style=for-the-badge&logo=webcomponents)
 ![License](https://img.shields.io/badge/license-MIT-orange?style=for-the-badge)
 ![Browser Support](https://img.shields.io/badge/browsers-chrome%20%7C%20firefox-blueviolet?style=for-the-badge)
+[![Firefox Eklentisi](https://img.shields.io/badge/Firefox-Eklentiyi%20Al-FF6611?style=for-the-badge&logo=firefox-browser)](https://addons.mozilla.org/tr/firefox/addon/webgrenade/)
 
 ---
 
@@ -748,6 +756,12 @@ Copyright © 2026 [MacallanTheRoot](https://github.com/MacallanTheRoot)
 Standart tarayıcı eklentileri bir ya da iki özellik sunar. **WebGrenade** farklıdır — iş akışınızı karmaşıklaştırmadan **8+ temel araca anında erişim** gerektiren web profesyonelleri, geliştiriciler ve ileri düzey kullanıcılar için eksiksiz bir taktik araç setidir.
 
 WebGrenade tamamen **çevrimdışı-öncelikli** çalışır. Tüm veriler `chrome.storage`'da kalır, tarayıcınızdan hiçbir şey çıkmaz. Takip yok, telemetri yok, bulut bağımlılığı yok.
+
+## 📦 Kurulum
+
+**WebGrenade'i şimdi edinin:**
+- 🦊 [Firefox Eklenti Mağazası'ndan Kur](https://addons.mozilla.org/tr/firefox/addon/webgrenade/)
+- 🔧 Ya da manuel olarak kur: Bu depoyu indir → `chrome://extensions` (veya Firefox için `about:debugging#/runtime/this-firefox`) sayfasını aç → Geliştirici Modunu etkinleştir → Paketlenmemiş eklentiyi yükle
 
 ---
 
