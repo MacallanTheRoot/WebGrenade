@@ -10,8 +10,8 @@
 
 <body>
   <div class="popup-container">
-
-    <aside class="sidebar">
+    <div class="popup-body">
+      <aside class="sidebar">
       <div class="sidebar-header">
         <span class="logo">💣</span>
       </div>
@@ -20,6 +20,13 @@
         <button class="sidebar-btn active" data-module="media" title="Media Center">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+        </button>
+        <button class="sidebar-btn" data-module="lyrics" title="Genius Lyrics">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 18V5l12-2v13"></path>
+            <circle cx="6" cy="18" r="3"></circle>
+            <circle cx="18" cy="16" r="3"></circle>
           </svg>
         </button>
         <button class="sidebar-btn" data-module="link" title="Link Station">
@@ -118,9 +125,16 @@
         <div class="util-card" style="margin-bottom: 12px;">
           <div class="util-header">
             <h3>🔊 Volume Booster</h3>
-            <span id="volume-boost-value" class="slider-value-label">100%</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span id="volume-boost-value" class="slider-value-label">100%</span>
+              <!-- Master ON/OFF toggle for Volume Booster -->
+              <label class="toggle-switch" title="Enable / Disable Volume Booster">
+                <input type="checkbox" id="toggle-volume-booster">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
           </div>
-          <p>Amplify audio beyond the browser limit (0–300%)</p>
+          <p id="volume-booster-status">Amplify audio beyond the browser limit (0–300%)</p>
           <input type="range" id="volume-boost-slider" class="range-slider" min="0" max="300" value="100"
             style="margin-top: 8px;">
         </div>
@@ -140,6 +154,61 @@
           <div id="native-video-list" class="history-list"></div>
         </div>
 
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- MODULE: GENIUS LYRICS                                              -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <div class="module-content" data-module="lyrics">
+        <div class="module-header">
+          <h2>🎵 Genius Lyrics</h2>
+          <p class="module-subtitle">Find lyrics for any song</p>
+        </div>
+
+        <!-- Auto-detected track info banner -->
+        <div id="lyrics-meta-bar" class="util-card" style="margin-bottom:12px;display:none;">
+          <div class="util-header" style="flex-wrap:wrap;gap:4px;">
+            <span id="lyrics-detected-label" style="font-size:12px;color:var(--text-muted);">🎧 Detected:</span>
+            <span id="lyrics-detected-track" style="font-size:12px;color:var(--primary);font-weight:600;"></span>
+          </div>
+        </div>
+
+        <!-- Manual Artist + Song inputs -->
+        <div class="form-group" style="margin-bottom:8px;">
+          <label>Artist</label>
+          <input type="text" id="lyrics-artist-input" class="input-field" placeholder="e.g. Kendrick Lamar">
+        </div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label>Song Title</label>
+          <input type="text" id="lyrics-song-input" class="input-field" placeholder="e.g. HUMBLE.">
+        </div>
+        <button id="fetch-lyrics-btn" class="btn btn-primary btn-block">🔍 Fetch Lyrics</button>
+
+        <!-- Status -->
+        <div id="lyrics-status" class="status-message" style="margin-top:8px;"></div>
+
+        <!-- Lyrics output -->
+        <div id="lyrics-output-wrapper" style="display:none;margin-top:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <h3 class="section-title" style="margin:0;">Lyrics</h3>
+            <button id="copy-lyrics-btn" class="btn-text" title="Copy lyrics">📋 Copy</button>
+          </div>
+          <pre id="lyrics-output" style="
+            background:var(--surface-2,#111);
+            border:1px solid var(--border,#222);
+            border-radius:8px;
+            padding:12px;
+            font-family:inherit;
+            font-size:12px;
+            line-height:1.7;
+            color:var(--text,#e0e0e0);
+            white-space:pre-wrap;
+            word-break:break-word;
+            max-height:260px;
+            overflow-y:auto;
+            margin:0;
+          "></pre>
+        </div>
       </div>
 
       <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -456,10 +525,18 @@
                 style="margin-top: 8px; white-space: nowrap;">💣 Nuke</button>
             </div>
           </div>
+          <!-- Fake Input Filler (Relocated) -->
+          <div class="util-card">
+            <div class="util-header">
+              <h3>🪄 Fake Input Filler</h3>
+            </div>
+            <p style="margin-bottom: 8px;">Auto-fill forms with random dummy data.</p>
+            <button id="fill-forms-btn" class="btn btn-primary btn-block">⚡ Fill All Forms</button>
+            <div class="status-message" id="fakefiller-status" style="margin-top: 8px;"></div>
+          </div>
 
         </div>
       </div>
-
       <!-- ═══════════════════════════════════════════════════════════════════ -->
       <!-- MODULE: SETTINGS                                                   -->
       <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -542,6 +619,9 @@
         </div>
       </div>
     </main>
+    </div>
+    <!-- Drag-to-resize handle -->
+    <div class="wg-resize-handle" id="wg-resize-handle" role="separator" aria-label="Drag to resize popup" title="Drag to resize"></div>
   </div>
 
   <div id="toast-container" class="toast-container"></div>

@@ -9,12 +9,18 @@
 const UA_RULE_ID = 2001;
 
 // ============================================================================
-// 1. CONTEXT MENUS — Reverse Image Search (6 engines)
+// 1. CONTEXT MENUS — Reverse Image Search (6 engines) & Fake Input Filler
 // ============================================================================
 
 chrome.runtime.onInstalled.addListener(() => {
   // Remove any stale menus first
   chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: "fake-filler-menu",
+      title: "🪄 Fill with fake data",
+      contexts: ["editable"]
+    });
+
     chrome.contextMenus.create({
       id: "search-image-parent",
       title: "🔍 Search Image on...",
@@ -50,6 +56,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     baidu: "https://graph.baidu.com/details?isfromtusoupc=1&tn=pc&carousel=0&image=",
     sogou: "https://pic.sogou.com/ris?query="
   };
+
+  if (info.menuItemId === "fake-filler-menu") {
+    chrome.tabs.sendMessage(tab.id, { action: "fillFakeData" }).catch(() => {});
+    return;
+  }
 
   if (engines[info.menuItemId] && info.srcUrl) {
     chrome.tabs.create({ url: engines[info.menuItemId] + encodeURIComponent(info.srcUrl) });
@@ -220,9 +231,126 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // ── POPUP BLOCKER: open an allowed URL that the user chose to unblock ─────
   if (request.action === 'open_allowed_popup' && request.url) {
-    // Opening via chrome.tabs.create bypasses the window.open override in inject.js
     chrome.tabs.create({ url: request.url, active: true });
     sendResponse({ success: true });
+  }
+
+  // ── GENIUS LYRICS (v3.2.2): Step 1 — Search via JSON API ──────────────────────────
+  //
+  // Uses genius.com/api/search/multi (public, no key required, cross-browser).
+  // Cleans the query with a noise-stripping regex before sending.
+  // Returns: { url, title, artist } of the first type==='song' hit.
+  if (request.action === 'searchGenius') {
+    const rawQuery = String(request.query || '').trim();
+    if (!rawQuery) { sendResponse({ error: 'Empty query' }); return true; }
+
+    // — Noise stripping: remove common YouTube/Streaming suffixes from title —
+    const cleanedQuery = rawQuery
+      // Parenthetical/bracket junk
+      .replace(/\s*[\[(]\s*(official\s*(music\s*)?video|official\s*audio|audio|lyric[s]?|lyrics video|live|acoustic|visualizer|explicit|clean|hq|hd|4k|slowed|reverb|nightcore|extended|instrumental|karaoke|cover|remix|original\s*mix|feat\.|ft\.|with\s+\w+|bonus\s*track)[\])]?\s*/gi, ' ')
+      // feat. / ft. inline (outside brackets)
+      .replace(/\s+(feat\.|ft\.)\s+[^\[\]()|]+/gi, '')
+      // Dash-suffix patterns: "Song - Topic", "Song - Official"
+      .replace(/\s+[-\u2013\u2014]+\s+(topic|official|audio|lyrics?|visualizer|live|music\s*video)\s*$/i, '')
+      // Trailing year (e.g. 2024)
+      .replace(/\s+\d{4}\s*$/, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    const apiUrl = 'https://genius.com/api/search/multi?per_page=5&q=' + encodeURIComponent(cleanedQuery);
+
+    fetch(apiUrl, {
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+    })
+      .then(r => {
+        if (!r.ok) throw new Error('Genius API HTTP ' + r.status);
+        return r.json();
+      })
+      .then(json => {
+        // json.response.sections is an array of { type, hits[] }
+        const sections = json?.response?.sections || [];
+        let songHit = null;
+
+        // Strict: only accept hits where type === 'song'
+        for (const section of sections) {
+          for (const hit of (section.hits || [])) {
+            if (hit.type === 'song' && hit.result?.url) {
+              songHit = hit.result;
+              break;
+            }
+          }
+          if (songHit) break;
+        }
+
+        if (!songHit) {
+          sendResponse({ error: 'No song result found for: ' + cleanedQuery });
+          return;
+        }
+
+        sendResponse({
+          url: songHit.url,
+          title: songHit.title || '',
+          artist: songHit.primary_artist?.name || '',
+          cleanedQuery
+        });
+      })
+      .catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
+
+  // ── GENIUS LYRICS (v3.2.2): Step 2 — Fetch lyrics page HTML ───────────────────────────
+  //
+  // Fetches the raw HTML of a Genius lyrics page.
+  // popup.js parses it with DOMParser to extract [data-lyrics-container] text.
+  if (request.action === 'fetchGeniusLyricsPage') {
+    const url = String(request.url || '').trim();
+    if (!url || !url.startsWith('https://genius.com/')) {
+      sendResponse({ error: 'Invalid Genius URL' }); return true;
+    }
+    fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,*/*;q=0.9',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    })
+      .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
+      .then(html => sendResponse({ html }))
+      .catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
+
+  // ── EYEDROPPER POLYFILL: capture the visible tab as a PNG data-URL ──────────
+  // Used by content.js to draw a full-viewport canvas for Firefox color picking.
+  if (request.action === 'captureTab') {
+    const tabId = sender.tab ? sender.tab.id : null;
+    const windowId = sender.tab ? sender.tab.windowId : chrome.windows.WINDOW_ID_CURRENT;
+    chrome.tabs.captureVisibleTab(windowId, { format: 'png' }, (dataUrl) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ dataUrl });
+      }
+    });
+    return true;
+  }
+
+  // ── POPUP BLOCKER: increment per-domain blocked count in storage ────────
+  // content.js relays this from inject.js (main world cannot access chrome.storage).
+  if (request.action === 'incrementBlockedCount') {
+    const domain = request.domain || '';
+    if (!domain) { sendResponse({ success: false }); return true; }
+    chrome.storage.local.get(['blockedCounts'], (data) => {
+      const counts = data.blockedCounts || {};
+      counts[domain] = (counts[domain] || 0) + 1;
+      chrome.storage.local.set({ blockedCounts: counts }, () => {
+        sendResponse({ success: true, count: counts[domain] });
+      });
+    });
+    return true;
   }
 
 });

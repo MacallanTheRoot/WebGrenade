@@ -27,6 +27,12 @@ const state = {
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
+    // Restore saved custom popup height
+    await restorePopupHeight();
+    
+    // Initialize resize handle listener
+    initResizer();
+
     // Load current tab info
     await loadCurrentTab();
 
@@ -44,6 +50,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeUtilities();
     initializeSettings();
     initializeProFeatures();  // v3.0 Pro Features
+    initializeGeniusLyrics(); // v3.2.1 New: Genius Lyrics module
+    initializeFakeFiller();   // v3.2.1 New: Fake Input Filler module
 
     // Show initial module
     showModule('media');
@@ -166,6 +174,8 @@ function showModule(moduleName) {
     loadCookies();
   } else if (moduleName === 'rss') {
     loadSavedFeeds();
+  } else if (moduleName === 'lyrics') {
+    detectMediaMetadataForLyrics(); // auto-fill Artist/Song from active tab
   } else if (moduleName === 'utilities') {
     updateBlockedCountBadge();
   }
@@ -183,12 +193,63 @@ function initializeMediaCenter() {
   downloadBtn?.addEventListener('click', downloadVideo);
 
   formatSelect?.addEventListener('change', () => {
-    // Toggle quality options based on format
-    if (formatSelect.value === 'mp3') {
-      qualitySelect.disabled = true;
-    } else {
-      qualitySelect.disabled = false;
+    qualitySelect.disabled = formatSelect.value === 'mp3';
+  });
+
+  // ── Volume Booster master toggle (v3.2.1) ─────────────────────────────────
+  const boosterToggle = document.getElementById('toggle-volume-booster');
+  const boosterSlider = document.getElementById('volume-boost-slider');
+  const boosterStatus = document.getElementById('volume-booster-status');
+
+  // Restore saved toggle state
+  chrome.storage.local.get(['volumeBoosterEnabled', 'volumeBoosterLevel'], (data) => {
+    const enabled = data.volumeBoosterEnabled || false;
+    const level = data.volumeBoosterLevel || 100;
+    if (boosterToggle) boosterToggle.checked = enabled;
+    if (boosterSlider) { boosterSlider.value = level; boosterSlider.disabled = !enabled; }
+    if (boosterStatus) boosterStatus.textContent = enabled
+      ? `Booster active — ${level}% amplification`
+      : 'Toggle ON to amplify audio (0–300%)';
+    document.getElementById('volume-boost-value').textContent = level + '%';
+  });
+
+  boosterToggle?.addEventListener('change', async (e) => {
+    const enabled = e.target.checked;
+    const level = parseInt(boosterSlider?.value || 100);
+    await chrome.storage.local.set({ volumeBoosterEnabled: enabled });
+    if (boosterSlider) boosterSlider.disabled = !enabled;
+    if (boosterStatus) boosterStatus.textContent = enabled
+      ? `Booster active — ${level}% amplification`
+      : 'Toggle ON to amplify audio (0–300%)';
+
+    if (!isInjectableUrl(state.currentUrl)) {
+      showToast('⚠️ Cannot boost audio on this page', 'warning');
+      return;
     }
+    try {
+      await chrome.tabs.sendMessage(state.currentTab.id, {
+        action: enabled ? 'setVolume' : 'resetVolume',
+        level: enabled ? level : 100
+      });
+      showToast(`🔊 Booster ${enabled ? 'ON' : 'OFF'}`, enabled ? 'success' : 'info');
+    } catch (_) {
+      showToast('⚠️ Reload the page to apply volume boost', 'warning');
+    }
+  });
+
+  // Volume slider — only active when toggle is ON
+  boosterSlider?.addEventListener('input', async () => {
+    const level = parseInt(boosterSlider.value);
+    document.getElementById('volume-boost-value').textContent = level + '%';
+    await chrome.storage.local.set({ volumeBoosterLevel: level });
+
+    const enabled = boosterToggle?.checked;
+    if (!enabled) return; // slider disabled state, guard anyway
+    if (boosterStatus) boosterStatus.textContent = `Booster active — ${level}% amplification`;
+    if (!isInjectableUrl(state.currentUrl)) return;
+    try {
+      await chrome.tabs.sendMessage(state.currentTab.id, { action: 'setVolume', level });
+    } catch (_) { /* content script not ready */ }
   });
 
   // Load download history
@@ -682,18 +743,41 @@ function initializeColorStudio() {
   const eyedropperBtn = document.getElementById('eyedropper-btn');
   const clearHistoryBtn = document.getElementById('clear-color-history-btn');
 
-  // Check if EyeDropper is supported
-  if (!window.EyeDropper) {
-    eyedropperBtn.disabled = true;
-    eyedropperBtn.textContent = '❌ EyeDropper not supported';
-    eyedropperBtn.title = 'EyeDropper API not available in this browser';
+  // ── EyeDropper: native (Chrome) or canvas polyfill (Firefox) ─────────────
+  if (window.EyeDropper) {
+    // Chrome / Chromium — use the native EyeDropper API
+    eyedropperBtn?.addEventListener('click', pickColorNative);
   } else {
-    eyedropperBtn?.addEventListener('click', pickColor);
+    // Firefox — use canvas-based polyfill via content.js + background.js
+    if (eyedropperBtn) {
+      eyedropperBtn.textContent = '💡 Pick Color from Page (Canvas)';
+      eyedropperBtn.disabled = false; // re-enable (was disabled in old code)
+    }
+    eyedropperBtn?.addEventListener('click', pickColorPolyfill);
+
+    // Listen for the result message from content.js
+    chrome.runtime.onMessage.addListener(function eyedropperResultHandler(msg) {
+      if (msg.action !== 'eyedropperResult') return;
+      chrome.runtime.onMessage.removeListener(eyedropperResultHandler);
+
+      if (msg.color) {
+        // Apply picked color to UI
+        document.getElementById('color-preview').style.backgroundColor = msg.color;
+        document.getElementById('color-hex').value = msg.color;
+        document.getElementById('color-rgb').value = hexToRgb(msg.color);
+        addToColorHistory(msg.color).then(() => loadColorHistory());
+        copyToClipboard(msg.color);
+        showToast(`✅ Color picked: ${msg.color}`, 'success');
+      } else if (msg.error) {
+        showToast('❌ Eyedropper failed: ' + msg.error, 'error');
+      }
+      // If color is null without error the user pressed Escape — silent cancel
+    });
   }
 
   clearHistoryBtn?.addEventListener('click', clearColorHistory);
 
-  // Copy Palette button — gathers saved colors, copies as CSV to clipboard
+  // Copy Palette button
   const copyPaletteBtn = document.getElementById('copy-palette-btn');
   copyPaletteBtn?.addEventListener('click', async () => {
     const { colorHistory = [] } = await chrome.storage.local.get('colorHistory');
@@ -710,36 +794,29 @@ function initializeColorStudio() {
     }
   });
 
-  // Event delegation for color history
+  // Event delegation for color history grid
   const colorGrid = document.getElementById('color-history-grid');
   colorGrid?.addEventListener('click', (e) => {
     const colorItem = e.target.closest('.color-history-item');
-    if (colorItem) {
-      const color = colorItem.dataset.color;
-      copyToClipboard(color);
-    }
+    if (colorItem) copyToClipboard(colorItem.dataset.color);
   });
 
   loadColorHistory();
 }
 
-async function pickColor() {
+// Native EyeDropper (Chrome / Chromium)
+async function pickColorNative() {
   try {
     const eyeDropper = new EyeDropper();
     const result = await eyeDropper.open();
     const color = result.sRGBHex;
 
-    // Update display
     document.getElementById('color-preview').style.backgroundColor = color;
     document.getElementById('color-hex').value = color;
     document.getElementById('color-rgb').value = hexToRgb(color);
 
-    // Add to history
     await addToColorHistory(color);
-
-    // Copy to clipboard
     await copyToClipboard(color);
-
     showToast(`✅ Color picked: ${color}`, 'success');
     loadColorHistory();
 
@@ -748,6 +825,24 @@ async function pickColor() {
       console.error('Color picker error:', error);
       showToast('❌ Failed to pick color', 'error');
     }
+  }
+}
+
+// Canvas-based EyeDropper polyfill (Firefox)
+// Closes the popup, sends a message to content.js to launch the canvas overlay.
+// The result is received via chrome.runtime.onMessage in initializeColorStudio().
+async function pickColorPolyfill() {
+  if (!isInjectableUrl(state.currentUrl)) {
+    showToast('⚠️ Cannot inject eyedropper on this page', 'warning');
+    return;
+  }
+  try {
+    showToast('💡 Click any pixel on the page. Press Esc to cancel.', 'info');
+    await chrome.tabs.sendMessage(state.currentTab.id, { action: 'startEyedropperPolyfill' });
+    // Popup closes automatically on Firefox when user interacts with the page.
+    // The result is sent back via chrome.runtime.sendMessage from content.js.
+  } catch (err) {
+    showToast('❌ Eyedropper injection failed: ' + err.message, 'error');
   }
 }
 
@@ -1626,6 +1721,169 @@ function displayRSSItems(items) {
     rssItem.appendChild(meta);
     feedList.appendChild(rssItem);
   });
+}
+
+// ============================================================================
+// MODULE 6.5: GENIUS LYRICS (v3.2.1 — NEW)
+// ============================================================================
+
+/**
+ * Auto-detects current tab media metadata (artist + title) by messaging content.js.
+ * Populates the manual input fields for convenience.
+ */
+async function detectMediaMetadataForLyrics() {
+  if (!isInjectableUrl(state.currentUrl)) return;
+  try {
+    const response = await chrome.tabs.sendMessage(state.currentTab.id, { action: 'getMediaMeta' });
+    if (!response) return;
+
+    const artistInput = document.getElementById('lyrics-artist-input');
+    const songInput = document.getElementById('lyrics-song-input');
+    const metaBar = document.getElementById('lyrics-meta-bar');
+    const trackLabel = document.getElementById('lyrics-detected-track');
+
+    if (response.title && (artistInput.value === '' && songInput.value === '')) {
+      if (artistInput) artistInput.value = response.artist || '';
+      if (songInput) songInput.value = response.title || '';
+    }
+
+    if (response.title && metaBar && trackLabel) {
+      const display = [response.artist, response.title].filter(Boolean).join(' — ');
+      trackLabel.textContent = display;
+      metaBar.style.display = '';
+    }
+  } catch (_) {
+    // Content script not reachable (e.g., chrome:// page) — silently skip
+  }
+}
+
+function initializeGeniusLyrics() {
+  const fetchBtn = document.getElementById('fetch-lyrics-btn');
+  const copyLyricsBtn = document.getElementById('copy-lyrics-btn');
+
+  fetchBtn?.addEventListener('click', fetchLyrics);
+
+  copyLyricsBtn?.addEventListener('click', async () => {
+    const pre = document.getElementById('lyrics-output');
+    if (!pre || !pre.textContent.trim()) {
+      showToast('No lyrics to copy', 'warning');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(pre.textContent);
+      showToast('✅ Lyrics copied!', 'success');
+    } catch {
+      showToast('❌ Clipboard access denied', 'error');
+    }
+  });
+}
+
+/**
+ * Genius Lyrics fetch pipeline (v3.2.2):
+ *   Step 1: background.js 'searchGenius' → JSON API → first type==='song' URL
+ *   Step 2: background.js 'fetchGeniusLyricsPage' → raw HTML → DOMParser extract
+ *   Step 3: Display in <pre> via textContent (no innerHTML)
+ */
+async function fetchLyrics() {
+  const artist = (document.getElementById('lyrics-artist-input')?.value || '').trim();
+  const song = (document.getElementById('lyrics-song-input')?.value || '').trim();
+
+  if (!song) {
+    const statusEl = document.getElementById('lyrics-status');
+    if (statusEl) statusEl.textContent = '⚠️ Please enter at least a song title';
+    return;
+  }
+
+  const rawQuery = [artist, song].filter(Boolean).join(' ');
+  const lyricsStatusEl = document.getElementById('lyrics-status');
+  const setStatus = (msg) => { if (lyricsStatusEl) lyricsStatusEl.textContent = msg; };
+  const clearStatus = () => { if (lyricsStatusEl) lyricsStatusEl.textContent = ''; };
+
+  setStatus('🔍 Searching Genius...');
+  document.getElementById('lyrics-output-wrapper').style.display = 'none';
+
+  try {
+    // ── Step 1: Search — background strips noise, calls JSON API ─────────────
+    const searchResp = await chrome.runtime.sendMessage({
+      action: 'searchGenius',
+      query: rawQuery
+    });
+
+    if (!searchResp || searchResp.error) {
+      throw new Error(searchResp?.error || 'No response from background');
+    }
+
+    const { url: lyricsPageUrl, title: matchedTitle, artist: matchedArtist, cleanedQuery } = searchResp;
+
+    // Show confirmation of what we matched (lets user spot wrong hits)
+    setStatus(`📄 Matched: "${matchedTitle}" by ${matchedArtist || 'Unknown'} — fetching lyrics…`);
+
+    // ── Step 2: Fetch the lyrics page HTML ───────────────────────────────────
+    const lyricsResp = await chrome.runtime.sendMessage({
+      action: 'fetchGeniusLyricsPage',
+      url: lyricsPageUrl
+    });
+
+    if (!lyricsResp || lyricsResp.error) {
+      throw new Error(lyricsResp?.error || 'Lyrics page fetch failed');
+    }
+
+    // ── Step 3: Parse & extract lyrics text ──────────────────────────────────
+    const parser = new DOMParser();
+    const lyricsDoc = parser.parseFromString(lyricsResp.html, 'text/html');
+
+    // Modern Genius: [data-lyrics-container="true"] divs with <br> line breaks
+    const containers = lyricsDoc.querySelectorAll('[data-lyrics-container="true"]');
+    let lyricsText = '';
+
+    if (containers.length > 0) {
+      containers.forEach(container => {
+        lyricsText += extractTextPreservingBreaks(container) + '\n\n';
+      });
+    } else {
+      // Legacy Genius markup fallback
+      const legacyEl = lyricsDoc.querySelector('.lyrics, .song_body-lyrics');
+      if (legacyEl) lyricsText = extractTextPreservingBreaks(legacyEl);
+    }
+
+    lyricsText = lyricsText.trim();
+
+    if (!lyricsText) {
+      setStatus('⚠️ Could not extract lyrics (page structure may have changed)');
+      return;
+    }
+
+    // ── Step 4: Display ───────────────────────────────────────────────────────
+    clearStatus();
+    const pre = document.getElementById('lyrics-output');
+    if (pre) pre.textContent = lyricsText;
+    document.getElementById('lyrics-output-wrapper').style.display = '';
+
+  } catch (err) {
+    console.error('[WebGrenade] Lyrics fetch error:', err);
+    setStatus('❌ ' + err.message);
+  }
+}
+
+/**
+ * Walk a DOM element's childNodes recursively, converting <br> to newlines
+ * and extracting .textContent from all other nodes.
+ * Preserves line structure without relying on innerHTML.
+ */
+function extractTextPreservingBreaks(el) {
+  let text = '';
+  el.childNodes.forEach(node => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.nodeValue;
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      if (node.tagName === 'BR') {
+        text += '\n';
+      } else {
+        text += extractTextPreservingBreaks(node);
+      }
+    }
+  });
+  return text;
 }
 
 // ============================================================================
@@ -2805,3 +3063,192 @@ function formatDate(timestamp) {
 
 // ── About version string update ───────────────────────────────────────────
 // Version bumped to 3.0.0 in popup.html about section
+
+function createDeleteIconSVG() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+
+  const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  polyline.setAttribute('points', '3 6 5 6 21 6');
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2');
+
+  svg.appendChild(polyline);
+  svg.appendChild(path);
+  return svg;
+}
+
+function createEditIconSVG() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+
+  const path1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path1.setAttribute('d', 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7');
+
+  const path2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path2.setAttribute('d', 'M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z');
+
+  svg.appendChild(path1);
+  svg.appendChild(path2);
+  return svg;
+}
+
+function createCloseIconSVG() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+
+  const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line1.setAttribute('x1', '18');
+  line1.setAttribute('y1', '6');
+  line1.setAttribute('x2', '6');
+  line1.setAttribute('y2', '18');
+
+  const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line2.setAttribute('x1', '6');
+  line2.setAttribute('y1', '6');
+  line2.setAttribute('x2', '18');
+  line2.setAttribute('y2', '18');
+
+  svg.appendChild(line1);
+  svg.appendChild(line2);
+  return svg;
+}
+
+function escapeHtml(text) {
+  if (typeof text !== 'string') return String(text);
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatDate(timestamp) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now - date;
+
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+
+  return date.toLocaleDateString();
+}
+
+// ============================================================================
+// MODULE: FAKE INPUT FILLER
+// ============================================================================
+
+function initializeFakeFiller() {
+  const btn = document.getElementById('fill-forms-btn');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    showStatus('fakefiller-status', 'Injecting fake data...', 'info');
+
+    try {
+      if (!state.currentTab || !state.currentTab.id) {
+        throw new Error('No active tab found. Please open a webpage.');
+      }
+      
+      const response = await chrome.tabs.sendMessage(state.currentTab.id, {
+        action: 'fillFakeData'
+      });
+      
+      if (response && response.success) {
+        showStatus('fakefiller-status', `Successfully filled ${response.count} input fields.`, 'success');
+        showToast(`Filled ${response.count} fields!`, 'success');
+      } else {
+        throw new Error((response && response.error) || 'Failed to communicate with content script. Try reloading the page.');
+      }
+    } catch (e) {
+      showStatus('fakefiller-status', `Error: ${e.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      setTimeout(() => hideStatus('fakefiller-status'), 4000);
+    }
+  });
+}
+
+// ── About version string update ───────────────────────────────────────────
+// Version bumped to 3.0.0 in popup.html about section
+
+// ============================================================================
+// RESIZER LOGIC
+// ============================================================================
+
+async function restorePopupHeight() {
+  const data = await chrome.storage.local.get('dashboardHeight');
+  if (data.dashboardHeight) {
+    applyPopupHeight(data.dashboardHeight);
+  }
+}
+
+function applyPopupHeight(height) {
+  const minHeight = 450;
+  const maxHeight = 600;
+  // Ensure within bounds
+  let finalHeight = Math.max(minHeight, Math.min(height, maxHeight));
+  document.body.style.height = `${finalHeight}px`;
+  document.documentElement.style.height = `${finalHeight}px`;
+}
+
+function initResizer() {
+  const handle = document.getElementById('wg-resize-handle');
+  if (!handle) return;
+
+  let isResizing = false;
+  let startY;
+  let startHeight;
+
+  handle.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    startY = e.clientY;
+    startHeight = document.documentElement.clientHeight || document.body.clientHeight;
+    document.body.style.cursor = 'ns-resize';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    
+    // Calculate new height (positive move is down, but popup grows down so delta is direct)
+    const deltaY = e.clientY - startY; 
+    let newHeight = startHeight + deltaY;
+    
+    applyPopupHeight(newHeight);
+  });
+
+  document.addEventListener('mouseup', async () => {
+    if (isResizing) {
+      isResizing = false;
+      document.body.style.cursor = '';
+      
+      const finalHeight = document.documentElement.clientHeight || document.body.clientHeight;
+      await chrome.storage.local.set({ dashboardHeight: finalHeight });
+    }
+  });
+}
