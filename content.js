@@ -449,6 +449,102 @@
                 break;
             }
 
+            // ── FAKE INPUT FILLER (Module 9) ──────────────────────────────────────
+            case 'fillFakeData': {
+                let filledCount = 0;
+                try {
+                    const rStr = () => Math.random().toString(36).substring(2, 8);
+                    const rNum = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+                    const rItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
+                    
+                    const f_firsts = ["John", "Emma", "Michael", "Sophia", "David", "Olivia", "James", "Isabella", "William", "Lucas", "Mia", "Amelia"];
+                    const f_lasts  = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez"];
+                    
+                    const isVisible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+                    
+                    const textInputs = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):not([type="file"]):not([type="radio"]):not([type="checkbox"])');
+                    
+                    textInputs.forEach(el => {
+                        if (!isVisible(el) || el.readOnly || el.disabled) return;
+                        let val = "";
+                        const t = el.type.toLowerCase();
+                        const n = (el.name || el.id || '').toLowerCase();
+                        
+                        if (t === 'email' || n.includes('email')) {
+                            val = `test.${rStr()}@example.com`;
+                        } else if (t === 'password' || n.includes('pass')) {
+                            val = `Str0ngP@ss${rNum(100,999)}!`;
+                        } else if (t === 'tel' || n.includes('phone') || n.includes('tel') || n.includes('mobile')) {
+                            val = `555${rNum(1000000, 9999999)}`;
+                        } else if (t === 'number' || n.includes('age') || n.includes('amount') || n.includes('price')) {
+                            let min = parseFloat(el.getAttribute('min'));
+                            let max = parseFloat(el.getAttribute('max'));
+                            if (isNaN(min)) min = 0;
+                            if (isNaN(max)) max = 1000;
+                            if (max < min) max = min + 100;
+                            val = String(rNum(Math.max(min,0), max));
+                        } else if (t === 'url' || n.includes('website') || n.includes('url') || n.includes('link')) {
+                            val = `https://www.${rStr()}.com`;
+                        } else if (n.includes('first') && n.includes('name')) {
+                            val = rItem(f_firsts);
+                        } else if (n.includes('last') && n.includes('name')) {
+                            val = rItem(f_lasts);
+                        } else if (n.includes('name') || n.includes('user')) {
+                            val = `${rItem(f_firsts)} ${rItem(f_lasts)}`;
+                        } else if (t === 'date') {
+                            val = `20${rNum(10,25)}-${String(rNum(1,12)).padStart(2,'0')}-${String(rNum(1,28)).padStart(2,'0')}`;
+                        } else if (t === 'color') {
+                            val = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+                        } else {
+                            val = `SampleData_${rStr()}`;
+                        }
+                        // Assign and dispatch
+                        el.value = val;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        filledCount++;
+                    });
+                    
+                    document.querySelectorAll('textarea').forEach(el => {
+                        if (!isVisible(el) || el.readOnly || el.disabled) return;
+                        el.value = `Auto-generated test comment.\nRandom ID: ${rStr()}-${rNum(1000,9999)}`;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        filledCount++;
+                    });
+                    
+                    document.querySelectorAll('select').forEach(el => {
+                        if (!isVisible(el) || el.disabled) return;
+                        const options = Array.from(el.options).filter(o => !o.disabled && o.value);
+                        if (options.length > 0) {
+                            el.selectedIndex = options[rNum(0, options.length - 1)].index;
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            filledCount++;
+                        }
+                    });
+                    
+                    document.querySelectorAll('input[type="checkbox"], input[type="radio"]').forEach(el => {
+                        if (!isVisible(el) || el.disabled) return;
+                        if (el.type === 'checkbox') {
+                            el.checked = Math.random() > 0.5;
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            filledCount++;
+                        } else if (el.type === 'radio') {
+                            if (Math.random() > 0.5) {
+                                el.checked = true;
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                filledCount++;
+                            }
+                        }
+                    });
+                    
+                    sendResponse({ success: true, count: filledCount });
+                } catch(e) {
+                    sendResponse({ success: false, error: e.message });
+                }
+                break;
+            }
+
             default:
                 break;
         }

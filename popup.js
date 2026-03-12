@@ -51,6 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeSettings();
     initializeProFeatures();  // v3.0 Pro Features
     initializeGeniusLyrics(); // v3.2.1 New: Genius Lyrics module
+    initializeFakeFiller();   // v3.2.1 New: Fake Input Filler module
 
     // Show initial module
     showModule('media');
@@ -3154,6 +3155,42 @@ function formatDate(timestamp) {
   if (days < 7) return `${days}d ago`;
 
   return date.toLocaleDateString();
+}
+
+// ============================================================================
+// MODULE: FAKE INPUT FILLER
+// ============================================================================
+
+function initializeFakeFiller() {
+  const btn = document.getElementById('fill-forms-btn');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    showStatus('fakefiller-status', 'Injecting fake data...', 'info');
+
+    try {
+      if (!state.currentTab || !state.currentTab.id) {
+        throw new Error('No active tab found. Please open a webpage.');
+      }
+      
+      const response = await chrome.tabs.sendMessage(state.currentTab.id, {
+        action: 'fillFakeData'
+      });
+      
+      if (response && response.success) {
+        showStatus('fakefiller-status', `Successfully filled ${response.count} input fields.`, 'success');
+        showToast(`Filled ${response.count} fields!`, 'success');
+      } else {
+        throw new Error((response && response.error) || 'Failed to communicate with content script. Try reloading the page.');
+      }
+    } catch (e) {
+      showStatus('fakefiller-status', `Error: ${e.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      setTimeout(() => hideStatus('fakefiller-status'), 4000);
+    }
+  });
 }
 
 // ── About version string update ───────────────────────────────────────────
