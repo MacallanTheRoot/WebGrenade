@@ -1,7 +1,9 @@
 /**
- * WebGrenade v3.2.0 — Content Script
+ * WebGrenade v3.2.1 — Content Script
  * Runs at document_start on all URLs.
- * Handles: Dark Mode, Volume Booster, Popup Blocker (CSP-safe via inject.js), User-Agent Override, Video Sniffer.
+ * Handles: Dark Mode, Volume Booster (+ Firefox AudioContext fix), Popup Blocker
+ *          (CSP-safe via inject.js), User-Agent Override, Video Sniffer,
+ *          Genius Lyrics metadata detection, EyeDropper polyfill (Firefox).
  * STRICT: No innerHTML anywhere. All DOM via createElement/textContent.
  */
 
@@ -13,21 +15,55 @@
     let mutationObserver = null;
     const audioContextMap = new WeakMap(); // video/audio el → { ctx, gainNode, source }
 
-    // ── Popup Blocker Helpers (v3.2 — CSP-safe inject.js src injection) ─────────
+    // ── EyeDropper polyfill state (Firefox) ───────────────────────────────────
+    let eyedropperKeyHandler = null;
+
+    // ── Popup Blocker Helpers (v3.2.2 — hardened main-world injection) ──────────
 
     /**
-     * Load inject.js into the MAIN WORLD by creating a <script src="..."> element.
-     * Using src= (not textContent=) satisfies even strict CSPs because the
-     * extension origin is implicitly trusted for its own web-accessible resources.
-     * The element is self-removing after load so it leaves no permanent DOM trace.
+     * Load inject.js into the MAIN WORLD via <script src="chrome-extension://...">
+     *
+     * v3.2.2 Hardening:
+     *   – Uses document.documentElement.prepend() so the script runs BEFORE
+     *     any page script (critical for overriding window.open reliably).
+     *   – Guards with a data-attribute instead of an id (the element self-removes
+     *     on load, so an id check always passes on the second call).
+     *   – If documentElement doesn't exist yet (extremely early document_start),
+     *     waits via a MutationObserver on document itself.
      */
     function injectViaScriptSrc() {
-        if (document.getElementById('wg-inject-script')) return; // idempotent
-        const scriptEl = document.createElement('script');
-        scriptEl.id = 'wg-inject-script';
-        scriptEl.src = chrome.runtime.getURL('inject.js');
-        scriptEl.onload = () => scriptEl.remove();
-        (document.head || document.documentElement).appendChild(scriptEl);
+        // Guard: mark documentElement so we don't inject twice
+        if (document.documentElement && document.documentElement.dataset.wgInjected === '1') return;
+
+        function _doInject() {
+            if (document.documentElement.dataset.wgInjected === '1') return;
+            document.documentElement.dataset.wgInjected = '1';
+
+            const s = document.createElement('script');
+            s.src = chrome.runtime.getURL('inject.js');
+            s.onload = () => s.remove();
+            s.onerror = () => {
+                // src-load failed (should never happen for a web_accessible_resource)
+                // Reset the guard so a retry is possible
+                delete document.documentElement.dataset.wgInjected;
+                s.remove();
+            };
+            // prepend() ensures execution BEFORE existing child scripts
+            document.documentElement.prepend(s);
+        }
+
+        if (document.documentElement) {
+            _doInject();
+        } else {
+            // document_start edge case: documentElement not yet created
+            const obs = new MutationObserver(() => {
+                if (document.documentElement) {
+                    obs.disconnect();
+                    _doInject();
+                }
+            });
+            obs.observe(document, { childList: true });
+        }
     }
 
     /**
@@ -35,12 +71,14 @@
      */
     function disableViaEvent() {
         window.dispatchEvent(new Event('__wgDisablePopupBlocker'));
+        // Also clear the injection guard so re-enable works on the same page load
+        if (document.documentElement) {
+            delete document.documentElement.dataset.wgInjected;
+        }
     }
 
     /**
      * MutationObserver that hides overlay modal elements (runs in isolated world).
-     *
-     * v3.2 (unchanged from v3.1):
      *   - z-index > 999, position:fixed only
      *   - Safe ARIA roles / tag exclusions to avoid breaking nav chrome
      */
@@ -78,12 +116,126 @@
         if (target) mutationObserver.observe(target, { childList: true, subtree: true });
     }
 
+    // ── EyeDropper Polyfill (Firefox) — Canvas overlay color picker ──────────
+    //
+    // When window.EyeDropper is undefined (Firefox), popup.js sends
+    // 'startEyedropperPolyfill'. We request a tab screenshot from background.js,
+    // draw it on a full-viewport <canvas> overlay, and let the user click to
+    // pick a pixel color. Result flows back as a runtime message:
+    //   { action: 'eyedropperResult', color: '#rrggbb' }
+
+    function stopEyedropperPolyfill() {
+        const c = document.getElementById('wg-eyedropper-canvas');
+        if (c) c.remove();
+        const t = document.getElementById('wg-eyedropper-tooltip');
+        if (t) t.remove();
+        if (eyedropperKeyHandler) {
+            document.removeEventListener('keydown', eyedropperKeyHandler, { capture: true });
+            eyedropperKeyHandler = null;
+        }
+    }
+
+    function startEyedropperPolyfill() {
+        // Cleanup any previous instance first
+        stopEyedropperPolyfill();
+
+        // Ask background.js for a PNG screenshot of the visible tab area
+        chrome.runtime.sendMessage({ action: 'captureTab' }, (response) => {
+            if (!response || response.error || !response.dataUrl) {
+                chrome.runtime.sendMessage({
+                    action: 'eyedropperResult',
+                    color: null,
+                    error: response ? response.error : 'No response from background'
+                });
+                return;
+            }
+
+            const img = new Image();
+            img.onload = () => {
+                // Build full-viewport canvas overlay
+                const canvas = document.createElement('canvas');
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                canvas.style.cssText = [
+                    'position:fixed',
+                    'top:0',
+                    'left:0',
+                    'width:100vw',
+                    'height:100vh',
+                    'z-index:2147483646',
+                    'cursor:crosshair',
+                    'image-rendering:pixelated',
+                ].join(';');
+                canvas.id = 'wg-eyedropper-canvas';
+
+                const ctx2d = canvas.getContext('2d');
+                ctx2d.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                // Floating hex tooltip
+                const tooltip = document.createElement('div');
+                tooltip.id = 'wg-eyedropper-tooltip';
+                tooltip.style.cssText = [
+                    'position:fixed',
+                    'z-index:2147483647',
+                    'background:#0a0a0a',
+                    'border:1px solid #ff6b00',
+                    'border-radius:6px',
+                    'padding:4px 10px',
+                    'font-family:monospace',
+                    'font-size:12px',
+                    'color:#fff',
+                    'pointer-events:none',
+                    'display:none',
+                    'white-space:nowrap',
+                ].join(';');
+
+                function getPixelHex(x, y) {
+                    const px = ctx2d.getImageData(x, y, 1, 1).data;
+                    return '#' + [px[0], px[1], px[2]].map(v => v.toString(16).padStart(2, '0')).join('');
+                }
+
+                // Update tooltip color on mouse move
+                canvas.addEventListener('mousemove', (e) => {
+                    const hex = getPixelHex(e.clientX, e.clientY);
+                    tooltip.textContent = hex;
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = (e.clientX + 16) + 'px';
+                    tooltip.style.top = (e.clientY + 16) + 'px';
+                });
+
+                // Click: pick color, clean up, return result to popup
+                canvas.addEventListener('click', (e) => {
+                    const hex = getPixelHex(e.clientX, e.clientY);
+                    stopEyedropperPolyfill();
+                    chrome.runtime.sendMessage({ action: 'eyedropperResult', color: hex });
+                });
+
+                // Escape: cancel picker
+                eyedropperKeyHandler = (e) => {
+                    if (e.key === 'Escape') {
+                        stopEyedropperPolyfill();
+                        chrome.runtime.sendMessage({ action: 'eyedropperResult', color: null });
+                    }
+                };
+                document.addEventListener('keydown', eyedropperKeyHandler, { capture: true, once: true });
+
+                document.documentElement.appendChild(canvas);
+                document.documentElement.appendChild(tooltip);
+            };
+
+            img.onerror = () => {
+                chrome.runtime.sendMessage({ action: 'eyedropperResult', color: null, error: 'Image load failed' });
+            };
+
+            img.src = response.dataUrl;
+        });
+    }
 
     // ── Message Listener ───────────────────────────────────────────────────────
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         switch (request.action) {
 
-            // ── DARK MODE ────────────────────────────────────────────────────────
+            // ── DARK MODE ─────────────────────────────────────────────────────────
             case 'enableDarkMode': {
                 let el = document.getElementById('wg-dark-mode');
                 if (!el) {
@@ -106,7 +258,10 @@
                 break;
             }
 
-            // ── VOLUME BOOSTER ───────────────────────────────────────────────────
+            // ── VOLUME BOOSTER ────────────────────────────────────────────────────
+            // FIX (v3.2.1 — Firefox): AudioContext starts in 'suspended' state when
+            // created outside a user gesture. We call ctx.resume() immediately after
+            // creation so audio is unblocked on both Chrome and Firefox.
             case 'setVolume': {
                 const gainValue = Math.max(0, Math.min(5, (request.level || 100) / 100));
                 const mediaEls = Array.from(document.querySelectorAll('video, audio'));
@@ -119,21 +274,30 @@
                 mediaEls.forEach(el => {
                     try {
                         if (audioContextMap.has(el)) {
-                            // Already connected — just update gain
-                            audioContextMap.get(el).gainNode.gain.value = gainValue;
+                            const entry = audioContextMap.get(el);
+                            entry.gainNode.gain.value = gainValue;
+                            // Resume if suspended (Firefox after page navigation)
+                            if (entry.ctx.state === 'suspended') {
+                                entry.ctx.resume().catch(err =>
+                                    console.warn('[WebGrenade] ctx.resume():', err.message));
+                            }
                         } else {
-                            // First time: create AudioContext pipeline
-                            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                            // First connection: build AudioContext graph
+                            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                            const ctx = new AudioCtx();
                             const source = ctx.createMediaElementSource(el);
                             const gainNode = ctx.createGain();
                             gainNode.gain.value = gainValue;
                             source.connect(gainNode);
                             gainNode.connect(ctx.destination);
                             audioContextMap.set(el, { ctx, gainNode, source });
+
+                            // ── Firefox fix: resume suspended context immediately ──
+                            ctx.resume().catch(err =>
+                                console.warn('[WebGrenade] ctx.resume():', err.message));
                         }
                     } catch (e) {
-                        // Element might already be connected — gracefully skip
-                        console.warn('WebGrenade VolumeBooster:', e.message);
+                        console.warn('[WebGrenade] VolumeBooster:', e.message);
                     }
                 });
 
@@ -141,7 +305,21 @@
                 break;
             }
 
-            // ── POPUP BLOCKER (v3.2 — CSP-safe via inject.js src) ─────────────────────
+            // ── VOLUME BOOSTER: RESET (master toggle OFF) ─────────────────────────
+            // Sets gainNode to 1.0 (passthrough) without tearing down the graph
+            // so re-enabling is instant (no AudioContext reconstruction).
+            case 'resetVolume': {
+                const mediaEls = Array.from(document.querySelectorAll('video, audio'));
+                mediaEls.forEach(el => {
+                    if (audioContextMap.has(el)) {
+                        audioContextMap.get(el).gainNode.gain.value = 1.0;
+                    }
+                });
+                sendResponse({ success: true });
+                break;
+            }
+
+            // ── POPUP BLOCKER ─────────────────────────────────────────────────────
             case 'enablePopupBlocker': {
                 if (popupBlockerActive) { sendResponse({ success: true }); break; }
                 popupBlockerActive = true;
@@ -153,7 +331,7 @@
 
             case 'disablePopupBlocker': {
                 popupBlockerActive = false;
-                disableViaEvent();      // tells inject.js to restore window.open + remove listeners
+                disableViaEvent(); // tells inject.js to restore window.open + remove listeners
                 if (mutationObserver) {
                     mutationObserver.disconnect();
                     mutationObserver = null;
@@ -162,40 +340,30 @@
                 break;
             }
 
-            // ── HTML5 VIDEO SNIFFER ───────────────────────────────────────────────────
+            // ── HTML5 VIDEO SNIFFER ───────────────────────────────────────────────
             case 'sniffVideos': {
                 const videoEls = Array.from(document.querySelectorAll('video'));
                 const results = [];
 
                 videoEls.forEach((el, idx) => {
-                    // Collect candidate URLs: src attribute, currentSrc, and <source> children
                     const candidates = new Set();
-
                     if (el.src) candidates.add(el.src);
                     if (el.currentSrc) candidates.add(el.currentSrc);
+                    el.querySelectorAll('source[src]').forEach(s => { if (s.src) candidates.add(s.src); });
 
-                    el.querySelectorAll('source[src]').forEach(s => {
-                        if (s.src) candidates.add(s.src);
-                    });
-
-                    // Filter: keep only non-blob, non-data, non-empty URLs that
-                    // look like real media files or CDN streams
                     const mediaUrls = Array.from(candidates).filter(u => {
                         if (!u || u === window.location.href) return false;
-                        if (/^blob:/i.test(u)) return false; // MSE streams — not directly downloadable
-                        if (/^data:/i.test(u)) return false;
+                        if (/^blob:/i.test(u) || /^data:/i.test(u)) return false;
                         return true;
                     });
 
-                    if (mediaUrls.length === 0) return; // nothing usable
+                    if (mediaUrls.length === 0) return;
 
-                    // Build a human-readable label from nearby context
                     const ariaLabel = el.getAttribute('aria-label') || el.getAttribute('title') || '';
                     const nearTitle = el.closest('[data-title]')?.dataset.title ||
                         el.closest('article,section,figure')?.querySelector('h1,h2,h3,h4,figcaption')?.textContent ||
                         '';
                     const label = (ariaLabel || nearTitle || ('Video ' + (idx + 1))).trim().slice(0, 80);
-
                     results.push({ label, urls: mediaUrls });
                 });
 
@@ -203,7 +371,7 @@
                 break;
             }
 
-            // ── USER-AGENT OVERRIDE (client-side navigator spoof) ─────────────
+            // ── USER-AGENT OVERRIDE (client-side navigator spoof) ─────────────────
             case 'setUA': {
                 if (request.ua && request.ua !== 'default') {
                     try {
@@ -216,10 +384,68 @@
                         sendResponse({ success: false, error: e.message });
                     }
                 } else {
-                    // Can't truly "restore" navigator.userAgent once overridden in this session,
-                    // but the DNR rule removal in background handles the HTTP header.
                     sendResponse({ success: true });
                 }
+                break;
+            }
+
+            // ── GENIUS LYRICS: read current tab media metadata ────────────────────
+            // Priority: Media Session API → YouTube DOM → OG meta tags → page title
+            case 'getMediaMeta': {
+                let artist = '';
+                let title = '';
+
+                // 1. Media Session API — the most reliable source (music sites set this)
+                try {
+                    const meta = navigator.mediaSession && navigator.mediaSession.metadata;
+                    if (meta) {
+                        artist = meta.artist || '';
+                        title = meta.title || '';
+                    }
+                } catch (_) { }
+
+                // 2. YouTube-specific DOM (watch page)
+                if (!title) {
+                    const ytEl = document.querySelector(
+                        'h1.ytd-watch-metadata yt-formatted-string,' +
+                        'ytd-watch-flexy h1 .ytd-watch-metadata'
+                    );
+                    if (ytEl) title = ytEl.textContent.trim();
+                }
+
+                // 3. OpenGraph / Twitter card meta tags
+                if (!title) {
+                    const ogEl = document.querySelector(
+                        'meta[property="og:title"], meta[name="twitter:title"]'
+                    );
+                    if (ogEl) title = (ogEl.getAttribute('content') || '').trim();
+                }
+
+                // 4. Page <title> — strip " — SiteName" suffix patterns
+                if (!title) {
+                    title = document.title.replace(/\s[—\-|·•]\s.+$/, '').trim();
+                }
+
+                // 5. Artist fallback: og:site_name
+                if (!artist) {
+                    const siteEl = document.querySelector('meta[property="og:site_name"]');
+                    if (siteEl) artist = (siteEl.getAttribute('content') || '').trim();
+                }
+
+                sendResponse({ artist: artist.slice(0, 200), title: title.slice(0, 200) });
+                break;
+            }
+
+            // ── EYEDROPPER POLYFILL (Firefox) ─────────────────────────────────────
+            case 'startEyedropperPolyfill': {
+                startEyedropperPolyfill();
+                sendResponse({ success: true });
+                break;
+            }
+
+            case 'stopEyedropperPolyfill': {
+                stopEyedropperPolyfill();
+                sendResponse({ success: true });
                 break;
             }
 
@@ -269,46 +495,31 @@
     }
 
     // ── Popup Blocked Toast (v3.2.1) ──────────────────────────────────────────
-    //
-    // Called when inject.js (main world) posts a 'popup_blocked' message.
-    // Builds interactive notification using only createElement/textContent/styles.
-    // No innerHTML anywhere.
+    // Called when inject.js posts a 'popup_blocked' window message.
+    // No innerHTML — full createElement/textContent construction.
 
     function showPopupBlockedToast(url) {
-        // ── Container ──────────────────────────────────────────────────────────
         const toast = document.createElement('div');
         toast.id = 'wg-popup-toast-' + Date.now();
         toast.style.cssText = [
-            'position:fixed',
-            'bottom:20px',
-            'right:20px',
-            'z-index:2147483647',
-            'background:#0a0a0a',
-            'border:1px solid #ff6b00',
-            'border-radius:8px',
-            'padding:16px',
-            'box-shadow:0 4px 12px rgba(0,0,0,0.5)',
-            'font-family:sans-serif',
-            'display:flex',
-            'flex-direction:column',
-            'gap:10px',
-            'width:300px',
-            'box-sizing:border-box',
+            'position:fixed', 'bottom:20px', 'right:20px',
+            'z-index:2147483647', 'background:#0a0a0a',
+            'border:1px solid #ff6b00', 'border-radius:8px',
+            'padding:16px', 'box-shadow:0 4px 12px rgba(0,0,0,0.5)',
+            'font-family:sans-serif', 'display:flex', 'flex-direction:column',
+            'gap:10px', 'width:300px', 'box-sizing:border-box',
         ].join(';');
 
-        // ── Heading ────────────────────────────────────────────────────────────
         const heading = document.createElement('div');
         heading.textContent = '\uD83D\uDCA3 WebGrenade blocked a popup.';
         heading.style.cssText = 'color:#ffffff;font-size:14px;font-weight:600;line-height:1.4;';
         toast.appendChild(heading);
 
-        // ── URL preview ────────────────────────────────────────────────────────
         const urlEl = document.createElement('div');
         urlEl.textContent = url || '(no URL)';
-        urlEl.style.cssText = 'color:#888888;font-size:12px;word-break:break-all;line-height:1.4;max-height:48px;overflow:hidden;';
+        urlEl.style.cssText = 'color:#888;font-size:12px;word-break:break-all;line-height:1.4;max-height:48px;overflow:hidden;';
         toast.appendChild(urlEl);
 
-        // ── Buttons ────────────────────────────────────────────────────────────
         const btnRow = document.createElement('div');
         btnRow.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;';
 
@@ -320,36 +531,20 @@
             toast.remove();
         }
 
-        // Ignore button
         const ignoreBtn = document.createElement('button');
         ignoreBtn.textContent = 'Ignore';
-        ignoreBtn.style.cssText = [
-            'background:transparent',
-            'color:#aaaaaa',
-            'border:none',
-            'cursor:pointer',
-            'font-size:13px',
-            'padding:6px 4px',
-        ].join(';');
+        ignoreBtn.style.cssText = 'background:transparent;color:#aaa;border:none;cursor:pointer;font-size:13px;padding:6px 4px;';
         ignoreBtn.addEventListener('click', dismiss);
 
-        // Allow & Open button
         const allowBtn = document.createElement('button');
         allowBtn.textContent = 'Allow & Open';
         allowBtn.style.cssText = [
-            'background:#ff6b00',
-            'color:#000000',
-            'border:none',
-            'border-radius:4px',
-            'padding:6px 12px',
-            'cursor:pointer',
-            'font-size:13px',
-            'font-weight:bold',
+            'background:#ff6b00', 'color:#000', 'border:none',
+            'border-radius:4px', 'padding:6px 12px',
+            'cursor:pointer', 'font-size:13px', 'font-weight:bold',
         ].join(';');
         allowBtn.addEventListener('click', () => {
-            if (url) {
-                chrome.runtime.sendMessage({ action: 'open_allowed_popup', url });
-            }
+            if (url) chrome.runtime.sendMessage({ action: 'open_allowed_popup', url });
             dismiss();
         });
 
@@ -357,18 +552,28 @@
         btnRow.appendChild(allowBtn);
         toast.appendChild(btnRow);
 
-        // Auto-dismiss after 10 s
         const autoTimer = setTimeout(dismiss, 10000);
-
         (document.body || document.documentElement).appendChild(toast);
     }
 
     // ── Listen for postMessages from inject.js (main world) ───────────────────
-    // Validate source to avoid rogue pages triggering our toast.
+    // Note: inject.js cannot access chrome.* APIs — it relays events via postMessage.
     window.addEventListener('message', (event) => {
         if (!event.data || event.data.source !== 'webgrenade') return;
-        if (event.data.action !== 'popup_blocked') return;
-        showPopupBlockedToast(event.data.url || '');
+
+        // Show toast when a popup is intercepted
+        if (event.data.action === 'popup_blocked') {
+            showPopupBlockedToast(event.data.url || '');
+        }
+
+        // Relay blocked-count increment to background (chrome.storage path)
+        // inject.js (main world) cannot access chrome.storage directly.
+        if (event.data.action === 'increment_blocked_count') {
+            chrome.runtime.sendMessage({
+                action: 'incrementBlockedCount',
+                domain: window.location.hostname
+            }).catch(() => { /* background may be sleeping — silently ignore */ });
+        }
     });
 
 })();
