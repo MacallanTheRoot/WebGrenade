@@ -120,65 +120,49 @@ function hideStatus(elementId) {
 // ============================================================================
 // SIDEBAR NAVIGATION
 // ============================================================================
-
 function initializeSidebar() {
-  const sidebarButtons = document.querySelectorAll('.sidebar-btn');
+  const navBtns = document.querySelectorAll('.sidebar-btn');
+  if (!navBtns.length) return;
 
-  if (!sidebarButtons || sidebarButtons.length === 0) {
-    return;
-  }
-
-  sidebarButtons.forEach(btn => {
+  navBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      const moduleName = btn.dataset.module;
-      showModule(moduleName);
-
-      // Update active state
-      sidebarButtons.forEach(b => b.classList.remove('active'));
+      showModule(btn.dataset.module);
+      navBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
     });
   });
 }
 
-function showModule(moduleName) {
-  state.activeModule = moduleName;
+function showModule(name) {
+  state.activeModule = name;
 
-  // Hide all modules
-  const allModules = document.querySelectorAll('.module-content');
-  allModules.forEach(module => {
-    module.classList.remove('active');
-    module.style.display = 'none';
+  // reset classes
+  document.querySelectorAll('.module-content').forEach(m => {
+    m.classList.remove('active');
+    m.style.display = 'none';
   });
 
-  // Show selected module
-  const targetModule = document.querySelector(`.module-content[data-module="${moduleName}"]`);
-  if (targetModule) {
-    targetModule.style.animation = 'none';
-    targetModule.classList.add('active');
-    targetModule.style.display = 'block';
-    targetModule.style.opacity = '1';
-    targetModule.style.visibility = 'visible';
-
-    setTimeout(() => {
-      targetModule.style.animation = '';
-    }, 10);
+  const target = document.querySelector(`.module-content[data-module="${name}"]`);
+  if (target) {
+    target.style.animation = 'none';
+    target.classList.add('active');
+    target.style.display = 'block';
+    target.style.opacity = '1';
+    target.style.visibility = 'visible';
+    setTimeout(() => target.style.animation = '', 10);
   }
 
-  // Module-specific initialization
-  if (moduleName === 'media') {
-    checkForYouTubeVideo();
-    sniffPageVideos();          // v3.2: also scan for native HTML5 videos
-  } else if (moduleName === 'link') {
-    generateQRCode(state.currentUrl);
-  } else if (moduleName === 'cookies') {
-    loadCookies();
-  } else if (moduleName === 'rss') {
-    loadSavedFeeds();
-  } else if (moduleName === 'lyrics') {
-    detectMediaMetadataForLyrics(); // auto-fill Artist/Song from active tab
-  } else if (moduleName === 'utilities') {
-    updateBlockedCountBadge();
-  }
+  // Module-specific initializers
+  const routes = {
+    media: () => { checkForYouTubeVideo(); sniffPageVideos(); },
+    link: () => generateQRCode(state.currentUrl),
+    cookies: loadCookies,
+    rss: loadSavedFeeds,
+    lyrics: detectMediaMetadataForLyrics,
+    utilities: updateBlockedCountBadge
+  };
+  
+  if (routes[name]) routes[name]();
 }
 
 // ============================================================================
@@ -196,7 +180,7 @@ function initializeMediaCenter() {
     qualitySelect.disabled = formatSelect.value === 'mp3';
   });
 
-  // ── Volume Booster master toggle (v3.2.1) ─────────────────────────────────
+  // section
   const boosterToggle = document.getElementById('toggle-volume-booster');
   const boosterSlider = document.getElementById('volume-boost-slider');
   const boosterStatus = document.getElementById('volume-booster-status');
@@ -743,7 +727,7 @@ function initializeColorStudio() {
   const eyedropperBtn = document.getElementById('eyedropper-btn');
   const clearHistoryBtn = document.getElementById('clear-color-history-btn');
 
-  // ── EyeDropper: native (Chrome) or canvas polyfill (Firefox) ─────────────
+  // section
   if (window.EyeDropper) {
     // Chrome / Chromium — use the native EyeDropper API
     eyedropperBtn?.addEventListener('click', pickColorNative);
@@ -1515,14 +1499,14 @@ async function addRSSFeed() {
     inputUrl = 'https://' + inputUrl;
   }
 
-  // ── Phase 1: Try as a direct feed URL first ───────────────────────────────
+  // section
   // If it already looks like an XML/feed path, skip HTML discovery
   const looksLikeFeed = /\.xml$|\/feed|rss|atom/i.test(inputUrl);
 
   let feedUrl = inputUrl;
 
   if (!looksLikeFeed) {
-    // ── Phase 2: Auto-Discovery ─────────────────────────────────────────────
+    // section
     showToast('🔍 Searching for RSS feed…', 'info');
 
     try {
@@ -1561,7 +1545,7 @@ async function addRSSFeed() {
     }
   }
 
-  // ── Phase 3: Save and load the resolved feed URL ──────────────────────────
+  // section
   const { rssFeeds = [] } = await chrome.storage.local.get('rssFeeds');
 
   if (rssFeeds.some(feed => feed.url === feedUrl)) {
@@ -1803,7 +1787,7 @@ async function fetchLyrics() {
   document.getElementById('lyrics-output-wrapper').style.display = 'none';
 
   try {
-    // ── Step 1: Search — background strips noise, calls JSON API ─────────────
+    // section
     const searchResp = await chrome.runtime.sendMessage({
       action: 'searchGenius',
       query: rawQuery
@@ -1818,7 +1802,7 @@ async function fetchLyrics() {
     // Show confirmation of what we matched (lets user spot wrong hits)
     setStatus(`📄 Matched: "${matchedTitle}" by ${matchedArtist || 'Unknown'} — fetching lyrics…`);
 
-    // ── Step 2: Fetch the lyrics page HTML ───────────────────────────────────
+    // section
     const lyricsResp = await chrome.runtime.sendMessage({
       action: 'fetchGeniusLyricsPage',
       url: lyricsPageUrl
@@ -1828,7 +1812,7 @@ async function fetchLyrics() {
       throw new Error(lyricsResp?.error || 'Lyrics page fetch failed');
     }
 
-    // ── Step 3: Parse & extract lyrics text ──────────────────────────────────
+    // section
     const parser = new DOMParser();
     const lyricsDoc = parser.parseFromString(lyricsResp.html, 'text/html');
 
@@ -1853,7 +1837,7 @@ async function fetchLyrics() {
       return;
     }
 
-    // ── Step 4: Display ───────────────────────────────────────────────────────
+    // section
     clearStatus();
     const pre = document.getElementById('lyrics-output');
     if (pre) pre.textContent = lyricsText;
@@ -2625,9 +2609,9 @@ const UA_PROFILES = {
 };
 
 function initializeProFeatures() {
-  // ── (Ad Blocker removed in v3.1) ─────────────────────────────────────────
+  // section
 
-  // ── Dark Mode Toggle ─────────────────────────────────────────────────────
+  // section
   const darkModeToggle = document.getElementById('toggle-dark-mode');
   darkModeToggle?.addEventListener('change', async (e) => {
     const enabled = e.target.checked;
@@ -2666,7 +2650,7 @@ function initializeProFeatures() {
     }
   });
 
-  // ── Volume Booster Slider ────────────────────────────────────────────────
+  // section
   const volSlider = document.getElementById('volume-boost-slider');
   const volLabel = document.getElementById('volume-boost-value');
   volSlider?.addEventListener('input', () => {
@@ -2711,7 +2695,7 @@ function initializeProFeatures() {
     }
   });
 
-  // ── History Cleaner ──────────────────────────────────────────────────────
+  // section
   const nukeBtn = document.getElementById('nuke-history-btn');
   nukeBtn?.addEventListener('click', async () => {
     const input = document.getElementById('history-cleaner-input');
@@ -2738,7 +2722,7 @@ function initializeProFeatures() {
     }
   });
 
-  // ── Restore persisted pro feature states ─────────────────────────────────
+  // section
   chrome.storage.local.get(['darkModeEnabled', 'popupBlockerEnabled', 'volumeLevel', 'selectedUA'], (r) => {
     if (r.darkModeEnabled) {
       const el = document.getElementById('toggle-dark-mode');
@@ -2779,7 +2763,7 @@ function initializeSettings() {
     toggleAdvancedBtn.textContent = isHidden ? 'Hide Advanced Settings' : 'Show Advanced Settings';
   });
 
-  // ── UA Switcher ────────────────────────────────────────────────────────────
+  // section
   const uaSelect = document.getElementById('ua-switcher');
   uaSelect?.addEventListener('change', async (e) => {
     const profileKey = e.target.value;
@@ -2794,7 +2778,7 @@ function initializeSettings() {
     if (maskToggle) maskToggle.checked = false;
   });
 
-  // ── Browser Mask Toggle ────────────────────────────────────────────────────
+  // section
   const browserMaskToggle = document.getElementById('toggle-browser-mask');
   browserMaskToggle?.addEventListener('change', async (e) => {
     const enabled = e.target.checked;
@@ -3061,7 +3045,7 @@ function formatDate(timestamp) {
   return date.toLocaleDateString();
 }
 
-// ── About version string update ───────────────────────────────────────────
+// section
 // Version bumped to 3.0.0 in popup.html about section
 
 function createDeleteIconSVG() {
@@ -3193,7 +3177,7 @@ function initializeFakeFiller() {
   });
 }
 
-// ── About version string update ───────────────────────────────────────────
+// section
 // Version bumped to 3.0.0 in popup.html about section
 
 // ============================================================================

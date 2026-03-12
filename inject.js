@@ -1,35 +1,16 @@
 /**
- * WebGrenade v3.2.1 — inject.js
- *
- * Runs in the MAIN WORLD (loaded via <script src="chrome-extension://..."> from content.js).
- * CSP-safe: the browser validates the src URL against the extension origin, not the page CSP.
- *
- * Schomery-inspired advanced popup blocker — four interception layers:
- *   1. Proxy window.open          — blocks untrusted calls
- *   2. location.assign / .replace / .href setter — blocks redirect-style popups
- *   3. Capture-phase pointerdown  — tracks trusted user interactions (used by layers 1–2)
- *   4. Capture-phase click / auxclick / submit — blocks untrusted _blank events
- *   5. Prototype wraps            — catches ghost anchor .click() and form .submit()
- *
- * On every block:
- *   – Posts { source:'webgrenade', action:'popup_blocked', url } → content.js shows toast
- *   – Posts { source:'webgrenade', action:'increment_blocked_count' } → content.js → background
- *
- * Disable via: window.dispatchEvent(new Event('__wgDisablePopupBlocker'))
- *
- * STRICT: No innerHTML anywhere.
+ * Main world injection script for advanced popup blocking.
+ * Overrides window.open and other typical popup vectors.
  */
 
 (function () {
     'use strict';
 
-    // ── Guard: only install once ───────────────────────────────────────────────
+    // run once check
     if (window.__wgInjected) return;
     window.__wgInjected = true;
 
-    // ── Trusted-event tracker ─────────────────────────────────────────────────
-    // A real user interaction (pointerdown) sets a timestamp.
-    // window.open / location changes are allowed only within a 1 s window after one.
+    // tracks if a user actually clicked something recently
     let _lastTrustedMs = 0;
 
     function onTrustedPointerdown() {
@@ -41,7 +22,7 @@
         return (Date.now() - _lastTrustedMs) < 1000;
     }
 
-    // ── Shared: post block message to content script ──────────────────────────
+    // ipc to content.js
     function reportBlocked(url) {
         const safeUrl = String(url || '');
         window.postMessage({ source: 'webgrenade', action: 'popup_blocked',        url: safeUrl }, '*');
@@ -49,16 +30,16 @@
         console.log('[WebGrenade] Blocked popup:', safeUrl || '(no url)');
     }
 
-    // ========================================================================
-    // LAYER 1 — Proxy window.open
-    // ========================================================================
+    
+    /* layer 1: proxy window.open */
+    
     const _originalOpen = window.open;
     window.__wgOriginalOpen = _originalOpen;
 
     window.open = new Proxy(_originalOpen, {
         apply(target, thisArg, args) {
             if (isTrustedContext()) {
-                // User-initiated open within the grace window — allow through
+                // allow if user just clicked
                 return Reflect.apply(target, thisArg, args);
             }
             reportBlocked(args[0]);
@@ -66,11 +47,9 @@
         }
     });
 
-    // ========================================================================
-    // LAYER 2 — location.assign / location.replace / location.href setter
-    // Catches redirect-style popups: window.location = 'ads.example.com'
-    // Only intercepts cross-origin targets opened without user interaction.
-    // ========================================================================
+    
+    /* layer 2: guard location redirects */
+    
     (function patchLocation() {
         const _assign  = location.assign.bind(location);
         const _replace = location.replace.bind(location);
@@ -105,7 +84,7 @@
             };
         } catch (_) { }
 
-        // Intercept location.href assignment (only for cross-origin untrusted sets)
+        // intercept href assignment
         try {
             const _locProto = Object.getPrototypeOf(location);
             const _hrefDescriptor = Object.getOwnPropertyDescriptor(_locProto, 'href');
@@ -127,11 +106,9 @@
         } catch (_) { /* May fail on some Firefox security zones — silently skip */ }
     })();
 
-    // ========================================================================
-    // LAYER 3 — Capture-phase event listener (click / auxclick / submit)
-    // Blocks UNTRUSTED (script-generated) events that target _blank links/forms.
-    // isTrusted === false means the event was dispatched by JS, not actual input.
-    // ========================================================================
+    
+    /* layer 3: block untrusted click events targeted at _blank */
+    
 
     function isBlankTarget(el) {
         if (!el) return false;
@@ -145,7 +122,7 @@
     }
 
     function blockingListener(event) {
-        // Only intercept script-generated (untrusted) events aimed at new tabs
+        // ignore real clicks
         if (event.isTrusted) return;
         if (!isBlankTarget(event.target)) return;
 
@@ -163,13 +140,9 @@
     document.addEventListener('auxclick', blockingListener, { capture: true, passive: false });
     document.addEventListener('submit',   blockingListener, { capture: true, passive: false });
 
-    // ========================================================================
-    // LAYER 4 — Prototype wraps for ghost anchor .click() and form .submit()
-    // Catches the pattern:
-    //   const a = document.createElement('a');
-    //   a.href = 'https://ads.example.com'; a.target = '_blank'; a.click();
-    // These elements are never attached to the DOM (no DOMContentLoaded, no event).
-    // ========================================================================
+    
+    /* layer 4: catch ghost elements */
+    
     const _anchorClick = HTMLAnchorElement.prototype.click;
     const _formSubmit  = HTMLFormElement.prototype.submit;
 
@@ -195,9 +168,9 @@
         return _formSubmit.apply(this, arguments);
     };
 
-    // ========================================================================
-    // DISABLE — restore everything when content.js fires the disable event
-    // ========================================================================
+    
+    /* teardown */
+    
     window.addEventListener('__wgDisablePopupBlocker', () => {
         // Restore window.open
         window.open = window.__wgOriginalOpen || _originalOpen;
@@ -217,5 +190,5 @@
         console.log('[WebGrenade] Popup blocker disabled.');
     });
 
-    console.log('[WebGrenade] inject.js v3.2.1 — schomery-style popup blocker active.');
+    console.log('[WG] Main world blocker injected');
 })();

@@ -1,16 +1,11 @@
-/**
- * WebGrenade v3.1 - Background Service Worker
- * Handles Context Menus, DNR Rules, Cookies, RSS Fetching,
- * History Cleaning, and User-Agent Switching.
- * Cross-browser: Chrome MV3 (service_worker) + Firefox MV3 (scripts)
- */
+// wg bg worker - menus, dnr, cookies, rss proxy
 
 // DNR rule ID for User-Agent switcher (Ad Blocker removed in v3.1)
 const UA_RULE_ID = 2001;
 
-// ============================================================================
-// 1. CONTEXT MENUS — Reverse Image Search (6 engines) & Fake Input Filler
-// ============================================================================
+
+/* Context menus */
+
 
 chrome.runtime.onInstalled.addListener(() => {
   // Remove any stale menus first
@@ -67,13 +62,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// ============================================================================
-// 2. MESSAGE HANDLING
-// ============================================================================
+
+/* Message routing */
+
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
-  // --- Cookie: Get ---
+  // fetch cookies
   if (request.action === 'getCookies') {
     chrome.cookies.getAll({ url: request.url }, (cookies) => {
       sendResponse({ cookies: cookies });
@@ -81,11 +76,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // --- Cookie: Set ---
+  // set cookie (MV3 strict)
   if (request.action === 'setCookie') {
     const { url, name, value, domain, path, secure, httpOnly, sameSite, expirationDate } = request.cookie;
 
-    // Build clean cookie object — only include supported SameSite values
+    // clean up samesite to avoid MV3 throwing
     const validSameSite = ['no_restriction', 'lax', 'strict', 'unspecified'];
     const cookieDetails = {
       url: url,
@@ -97,12 +92,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sameSite: validSameSite.includes(sameSite) ? sameSite : 'lax'
     };
 
-    // Only set domain if it's a non-host-only cookie (avoids MV3 errors)
+    // drop domain for host-only
     if (domain && domain.startsWith('.')) {
       cookieDetails.domain = domain;
     }
 
-    // Only set expirationDate for persistent cookies
+    // skip expiration for session cookies
     if (expirationDate && !request.cookie.session) {
       cookieDetails.expirationDate = expirationDate;
     }
@@ -117,7 +112,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // --- Cookie: Delete ---
+  // delete cookie
   if (request.action === 'deleteCookie') {
     chrome.cookies.remove({ url: request.url, name: request.name }, (details) => {
       sendResponse({ success: true, details });
@@ -125,10 +120,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // --- Cookie: Delete All ---
+  // nuke all cookies for domain
   if (request.action === 'deleteAllCookies') {
     chrome.cookies.getAll({ url: request.url }, (cookies) => {
-      let pending = cookies.length;
+      let pending = cookies.length; // track callbacks
       if (pending === 0) { sendResponse({ success: true, count: 0 }); return; }
       cookies.forEach(cookie => {
         chrome.cookies.remove({ url: request.url, name: cookie.name }, () => {
@@ -140,7 +135,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // --- RSS Fetcher: Return raw text, let popup parse via DOMParser ---
+  // proxy RSS fetch to bypass CORS
   if (request.action === 'fetchRSS') {
     fetch(request.url, { headers: { 'Accept': 'application/rss+xml, application/xml, text/xml, */*' } })
       .then(response => {
@@ -154,7 +149,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // --- RSS Auto-Discovery: Fetch raw HTML of a site URL to scan for <link rel="alternate"> ---
+  // proxy HTML fetch for rss auto-discovery
   if (request.action === 'fetchHTML') {
     fetch(request.url, { headers: { 'Accept': 'text/html, */*' } })
       .then(response => {
@@ -166,7 +161,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // --- User-Agent Switcher: Modify User-Agent request header via DNR ---
+  // DNR based UA switcher
   if (request.action === 'setUserAgent') {
     if (request.ua && request.ua !== 'default') {
       const rule = {
@@ -196,7 +191,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // --- History Cleaner: Nuke all history entries matching a domain/URL ---
+  // history clear req
   if (request.action === 'nukeHistory') {
     if (!chrome.history) {
       sendResponse({ success: false, error: 'History API not available' });
@@ -229,13 +224,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // ── POPUP BLOCKER: open an allowed URL that the user chose to unblock ─────
+  // open whitelisted popup
   if (request.action === 'open_allowed_popup' && request.url) {
     chrome.tabs.create({ url: request.url, active: true });
     sendResponse({ success: true });
   }
 
-  // ── GENIUS LYRICS (v3.2.2): Step 1 — Search via JSON API ──────────────────────────
+  // Genius search API (no auth needed)
   //
   // Uses genius.com/api/search/multi (public, no key required, cross-browser).
   // Cleans the query with a noise-stripping regex before sending.
@@ -244,7 +239,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const rawQuery = String(request.query || '').trim();
     if (!rawQuery) { sendResponse({ error: 'Empty query' }); return true; }
 
-    // — Noise stripping: remove common YouTube/Streaming suffixes from title —
+    // strip junk from song titles to improve match rate
     const cleanedQuery = rawQuery
       // Parenthetical/bracket junk
       .replace(/\s*[\[(]\s*(official\s*(music\s*)?video|official\s*audio|audio|lyric[s]?|lyrics video|live|acoustic|visualizer|explicit|clean|hq|hd|4k|slowed|reverb|nightcore|extended|instrumental|karaoke|cover|remix|original\s*mix|feat\.|ft\.|with\s+\w+|bonus\s*track)[\])]?\s*/gi, ' ')
@@ -298,7 +293,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // ── GENIUS LYRICS (v3.2.2): Step 2 — Fetch lyrics page HTML ───────────────────────────
+  // fetch genius HTML page for scraping
   //
   // Fetches the raw HTML of a Genius lyrics page.
   // popup.js parses it with DOMParser to extract [data-lyrics-container] text.
@@ -323,7 +318,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // ── EYEDROPPER POLYFILL: capture the visible tab as a PNG data-URL ──────────
+  // Firefox eyedropper polyfill req
   // Used by content.js to draw a full-viewport canvas for Firefox color picking.
   if (request.action === 'captureTab') {
     const tabId = sender.tab ? sender.tab.id : null;
@@ -338,7 +333,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // ── POPUP BLOCKER: increment per-domain blocked count in storage ────────
+  // track blocked popup stat
   // content.js relays this from inject.js (main world cannot access chrome.storage).
   if (request.action === 'incrementBlockedCount') {
     const domain = request.domain || '';

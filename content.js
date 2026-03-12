@@ -10,27 +10,18 @@
 (function () {
     'use strict';
 
-    // ── State ──────────────────────────────────────────────────────────────────
+    // globals
     let popupBlockerActive = false;
     let mutationObserver = null;
-    const audioContextMap = new WeakMap(); // video/audio el → { ctx, gainNode, source }
+    const audioContextMap = new WeakMap(); // maps media els to audio graphs
 
-    // ── EyeDropper polyfill state (Firefox) ───────────────────────────────────
+    // eyedropper state
     let eyedropperKeyHandler = null;
 
-    // ── Popup Blocker Helpers (v3.2.2 — hardened main-world injection) ──────────
+    // popup blocker injection logic
 
-    /**
-     * Load inject.js into the MAIN WORLD via <script src="chrome-extension://...">
-     *
-     * v3.2.2 Hardening:
-     *   – Uses document.documentElement.prepend() so the script runs BEFORE
-     *     any page script (critical for overriding window.open reliably).
-     *   – Guards with a data-attribute instead of an id (the element self-removes
-     *     on load, so an id check always passes on the second call).
-     *   – If documentElement doesn't exist yet (extremely early document_start),
-     *     waits via a MutationObserver on document itself.
-     */
+    // injects main-world script via src to bypass csp
+// guards with data attribute to prevent double init
     function injectViaScriptSrc() {
         // Guard: mark documentElement so we don't inject twice
         if (document.documentElement && document.documentElement.dataset.wgInjected === '1') return;
@@ -77,11 +68,7 @@
         }
     }
 
-    /**
-     * MutationObserver that hides overlay modal elements (runs in isolated world).
-     *   - z-index > 999, position:fixed only
-     *   - Safe ARIA roles / tag exclusions to avoid breaking nav chrome
-     */
+    // naive modal hider based on z-index and keywords
     function startOverlayObserver() {
         if (mutationObserver) return;
 
@@ -116,13 +103,7 @@
         if (target) mutationObserver.observe(target, { childList: true, subtree: true });
     }
 
-    // ── EyeDropper Polyfill (Firefox) — Canvas overlay color picker ──────────
-    //
-    // When window.EyeDropper is undefined (Firefox), popup.js sends
-    // 'startEyedropperPolyfill'. We request a tab screenshot from background.js,
-    // draw it on a full-viewport <canvas> overlay, and let the user click to
-    // pick a pixel color. Result flows back as a runtime message:
-    //   { action: 'eyedropperResult', color: '#rrggbb' }
+    // Firefox doesn\'t support EyeDropper API yet, so we have to draw a screenshot onto a canvas and pick the pixel.
 
     function stopEyedropperPolyfill() {
         const c = document.getElementById('wg-eyedropper-canvas');
@@ -231,11 +212,11 @@
         });
     }
 
-    // ── Message Listener ───────────────────────────────────────────────────────
+    // msg router
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         switch (request.action) {
 
-            // ── DARK MODE ─────────────────────────────────────────────────────────
+            
             case 'enableDarkMode': {
                 let el = document.getElementById('wg-dark-mode');
                 if (!el) {
@@ -258,10 +239,8 @@
                 break;
             }
 
-            // ── VOLUME BOOSTER ────────────────────────────────────────────────────
-            // FIX (v3.2.1 — Firefox): AudioContext starts in 'suspended' state when
-            // created outside a user gesture. We call ctx.resume() immediately after
-            // creation so audio is unblocked on both Chrome and Firefox.
+            
+            // Firefox audio ctx bug: requires immediate resume
             case 'setVolume': {
                 const gainValue = Math.max(0, Math.min(5, (request.level || 100) / 100));
                 const mediaEls = Array.from(document.querySelectorAll('video, audio'));
@@ -276,13 +255,13 @@
                         if (audioContextMap.has(el)) {
                             const entry = audioContextMap.get(el);
                             entry.gainNode.gain.value = gainValue;
-                            // Resume if suspended (Firefox after page navigation)
+                            // hack for firefox suspended ctx
                             if (entry.ctx.state === 'suspended') {
                                 entry.ctx.resume().catch(err =>
                                     console.warn('[WebGrenade] ctx.resume():', err.message));
                             }
                         } else {
-                            // First connection: build AudioContext graph
+                            // first run: setup audio graph
                             const AudioCtx = window.AudioContext || window.webkitAudioContext;
                             const ctx = new AudioCtx();
                             const source = ctx.createMediaElementSource(el);
@@ -305,9 +284,7 @@
                 break;
             }
 
-            // ── VOLUME BOOSTER: RESET (master toggle OFF) ─────────────────────────
-            // Sets gainNode to 1.0 (passthrough) without tearing down the graph
-            // so re-enabling is instant (no AudioContext reconstruction).
+            // resets gain without destroying the graph
             case 'resetVolume': {
                 const mediaEls = Array.from(document.querySelectorAll('video, audio'));
                 mediaEls.forEach(el => {
@@ -319,7 +296,7 @@
                 break;
             }
 
-            // ── POPUP BLOCKER ─────────────────────────────────────────────────────
+            
             case 'enablePopupBlocker': {
                 if (popupBlockerActive) { sendResponse({ success: true }); break; }
                 popupBlockerActive = true;
@@ -331,7 +308,7 @@
 
             case 'disablePopupBlocker': {
                 popupBlockerActive = false;
-                disableViaEvent(); // tells inject.js to restore window.open + remove listeners
+                disableViaEvent(); // signal inject.js to cleanup
                 if (mutationObserver) {
                     mutationObserver.disconnect();
                     mutationObserver = null;
@@ -340,7 +317,7 @@
                 break;
             }
 
-            // ── HTML5 VIDEO SNIFFER ───────────────────────────────────────────────
+            // video element sniffer
             case 'sniffVideos': {
                 const videoEls = Array.from(document.querySelectorAll('video'));
                 const results = [];
@@ -371,7 +348,7 @@
                 break;
             }
 
-            // ── USER-AGENT OVERRIDE (client-side navigator spoof) ─────────────────
+            // naive client UA spoof
             case 'setUA': {
                 if (request.ua && request.ua !== 'default') {
                     try {
@@ -389,8 +366,7 @@
                 break;
             }
 
-            // ── GENIUS LYRICS: read current tab media metadata ────────────────────
-            // Priority: Media Session API → YouTube DOM → OG meta tags → page title
+            // scrapes song info from the current page
             case 'getMediaMeta': {
                 let artist = '';
                 let title = '';
@@ -436,7 +412,7 @@
                 break;
             }
 
-            // ── EYEDROPPER POLYFILL (Firefox) ─────────────────────────────────────
+            
             case 'startEyedropperPolyfill': {
                 startEyedropperPolyfill();
                 sendResponse({ success: true });
@@ -449,7 +425,7 @@
                 break;
             }
 
-            // ── FAKE INPUT FILLER (Module 9) ──────────────────────────────────────
+            
             case 'fillFakeData': {
                 let filledCount = 0;
                 try {
@@ -552,7 +528,7 @@
         return true; // keep channel open for async responses
     });
 
-    // ── Restore persisted states on page load ─────────────────────────────────
+    // boot state from local storage
     try {
         chrome.storage.local.get(
             ['darkModeEnabled', 'popupBlockerEnabled', 'customUA'],
@@ -590,9 +566,7 @@
         // Storage not available (e.g., incognito without permission)
     }
 
-    // ── Popup Blocked Toast (v3.2.1) ──────────────────────────────────────────
-    // Called when inject.js posts a 'popup_blocked' window message.
-    // No innerHTML — full createElement/textContent construction.
+    // interactive toast for blocked popups
 
     function showPopupBlockedToast(url) {
         const toast = document.createElement('div');
@@ -652,8 +626,7 @@
         (document.body || document.documentElement).appendChild(toast);
     }
 
-    // ── Listen for postMessages from inject.js (main world) ───────────────────
-    // Note: inject.js cannot access chrome.* APIs — it relays events via postMessage.
+    // relay messages from main world inject.js to isolated world
     window.addEventListener('message', (event) => {
         if (!event.data || event.data.source !== 'webgrenade') return;
 
