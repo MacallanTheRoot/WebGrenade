@@ -9,12 +9,18 @@
 const UA_RULE_ID = 2001;
 
 // ============================================================================
-// 1. CONTEXT MENUS — Reverse Image Search (6 engines)
+// 1. CONTEXT MENUS — Reverse Image Search (6 engines) & Fake Input Filler
 // ============================================================================
 
 chrome.runtime.onInstalled.addListener(() => {
   // Remove any stale menus first
   chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: "fake-filler-menu",
+      title: "🪄 Fill with fake data",
+      contexts: ["editable"]
+    });
+
     chrome.contextMenus.create({
       id: "search-image-parent",
       title: "🔍 Search Image on...",
@@ -50,6 +56,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     baidu: "https://graph.baidu.com/details?isfromtusoupc=1&tn=pc&carousel=0&image=",
     sogou: "https://pic.sogou.com/ris?query="
   };
+
+  if (info.menuItemId === "fake-filler-menu") {
+    chrome.tabs.sendMessage(tab.id, { action: "fillFakeData" }).catch(() => {});
+    return;
+  }
 
   if (engines[info.menuItemId] && info.srcUrl) {
     chrome.tabs.create({ url: engines[info.menuItemId] + encodeURIComponent(info.srcUrl) });

@@ -69,11 +69,6 @@
             <rect x="3" y="14" width="7" height="7"></rect>
           </svg>
         </button>
-        <button class="sidebar-btn" data-module="fakefiller" title="Fake Input Filler">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-          </svg>
-        </button>
         <button class="sidebar-btn" data-module="settings" title="Settings">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"></circle>
@@ -530,30 +525,18 @@
                 style="margin-top: 8px; white-space: nowrap;">💣 Nuke</button>
             </div>
           </div>
-
-        </div>
-      </div>
-
-      <!-- ═══════════════════════════════════════════════════════════════════ -->
-      <!-- MODULE: FAKE INPUT FILLER                                          -->
-      <!-- ═══════════════════════════════════════════════════════════════════ -->
-      <div class="module-content" data-module="fakefiller">
-        <div class="module-header">
-          <h2>🪄 Fake Input Filler</h2>
-          <p class="module-subtitle">Populate massive forms with dummy data</p>
-        </div>
-        <div class="util-card">
-          <div class="util-header">
-            <h3>⚡ Auto-Fill Current Page</h3>
+          <!-- Fake Input Filler (Relocated) -->
+          <div class="util-card">
+            <div class="util-header">
+              <h3>🪄 Fake Input Filler</h3>
+            </div>
+            <p style="margin-bottom: 8px;">Auto-fill forms with random dummy data.</p>
+            <button id="fill-forms-btn" class="btn btn-primary btn-block">⚡ Fill All Forms</button>
+            <div class="status-message" id="fakefiller-status" style="margin-top: 8px;"></div>
           </div>
-          <p style="margin-bottom: 12px; font-size: 13px; color: var(--text-muted);">
-            Instantly fills all visible text inputs, textareas, checkboxes, radio buttons, and dropdowns with realistic randomized data.
-          </p>
-          <button id="fill-forms-btn" class="btn btn-primary btn-block" style="font-size: 14px; padding: 10px;">Fill All Forms</button>
-        </div>
-        <div class="status-message" id="fakefiller-status" style="margin-top: 12px;"></div>
-      </div>
 
+        </div>
+      </div>
       <!-- ═══════════════════════════════════════════════════════════════════ -->
       <!-- MODULE: SETTINGS                                                   -->
       <!-- ═══════════════════════════════════════════════════════════════════ -->
