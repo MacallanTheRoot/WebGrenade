@@ -3,10 +3,10 @@
 </div>
 
 <a name="en"></a>
-# 💣 WebGrenade v4.0.0
+# 💣 WebGrenade v4.1.0
 ### The Unified Power User Utility Suite
 
-![Version](https://img.shields.io/badge/version-4.0.0-orange?style=for-the-badge&logo=google-chrome)
+![Version](https://img.shields.io/badge/version-4.1.0-orange?style=for-the-badge&logo=google-chrome)
 ![Manifest](https://img.shields.io/badge/manifest-v3-green?style=for-the-badge&logo=webcomponents)
 ![License](https://img.shields.io/badge/license-MIT-orange?style=for-the-badge)
 ![Browser Support](https://img.shields.io/badge/browsers-chrome%20%7C%20firefox-blueviolet?style=for-the-badge)
@@ -27,7 +27,7 @@ WebGrenade provides a wide array of tools to enhance your browsing, development,
 - **💻 User-Agent Switcher:** Test responsive designs or bypass UA filters by simulating different browsers.
 
 ### Media & UI Tools
-- **🔊 Volume Booster:** Enhance audio levels (0-300%) on any tab with native media elements.
+- **🔊 Volume Booster:** Enhance audio levels (0-300%) on tabs with native media and Web Audio players.
 - **🎨 Color Studio:** Use an eye-dropper tool to pick colors from any page and manage HEX/RGB palettes.
 - **🌙 Global Dark Mode:** Force high-contrast dark mode on any website intelligently.
 - **🔍 Advanced Image Search:** Quick reverse image search functionality via the context menu.
@@ -99,10 +99,10 @@ WebGrenade is open source. Contributions are welcome! If you find a bug or have 
 ---
 
 <a name="tr"></a>
-# 💣 WebGrenade v4.0.0
+# 💣 WebGrenade v4.1.0
 ### Birleşik İleri Düzey Kullanıcı Araç Seti
 
-![Version](https://img.shields.io/badge/version-4.0.0-orange?style=for-the-badge&logo=google-chrome)
+![Version](https://img.shields.io/badge/version-4.1.0-orange?style=for-the-badge&logo=google-chrome)
 ![Manifest](https://img.shields.io/badge/manifest-v3-green?style=for-the-badge&logo=webcomponents)
 ![License](https://img.shields.io/badge/license-MIT-orange?style=for-the-badge)
 ![Browser Support](https://img.shields.io/badge/browsers-chrome%20%7C%20firefox-blueviolet?style=for-the-badge)
@@ -123,7 +123,7 @@ WebGrenade, tarama, geliştirme ve test iş akışlarınızı geliştirmek için
 - **💻 Kullanıcı Ajanı (UA) Değiştirici:** Farklı tarayıcıları simüle ederek duyarlı tasarımları test edin veya UA filtrelerini aşın.
 
 ### Medya ve Arayüz Araçları
-- **🔊 Ses Güçlendirici:** Medya öğeleri içeren herhangi bir sekmede ses seviyelerini (%0-300) artırın.
+- **🔊 Ses Güçlendirici:** Yerel medya öğeleri ve Web Audio oynatıcıları içeren sekmelerde ses seviyelerini (%0-300) artırın.
 - **🎨 Renk Stüdyosu:** Herhangi bir sayfadan renk seçmek ve HEX/RGB paletlerini yönetmek için damlalık aracını kullanın.
 - **🌙 Global Karanlık Mod:** Herhangi bir web sitesinde akıllı ve yüksek kontrastlı karanlık modu zorlayın.
 - **🔍 Gelişmiş Görsel Arama:** Sağ tık bağlam menüsü üzerinden hızlı tersine görsel arama işlevselliği.

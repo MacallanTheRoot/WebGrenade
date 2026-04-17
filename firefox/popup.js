@@ -72,8 +72,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeUtilities();
     initializeSettings();
     initializeProFeatures();  // v3.0 Pro Features
-    initializeGeniusLyrics(); // v3.2.1 New: Genius Lyrics module
-    initializeFakeFiller();   // v3.2.1 New: Fake Input Filler module
+    initializeGeniusLyrics(); // Genius Lyrics module
+    initializeFakeFiller();   // Fake Input Filler module
 
     // Show the last visited module (fallback to media)
     const initialModule = await getInitialModule();
@@ -217,9 +217,7 @@ function initializeMediaCenter() {
   formatSelect?.addEventListener('change', () => {
     qualitySelect.disabled = formatSelect.value === 'mp3';
   });
-
-  // section
-  const boosterToggle = document.getElementById('toggle-volume-booster');
+const boosterToggle = document.getElementById('toggle-volume-booster');
   const boosterSlider = document.getElementById('volume-boost-slider');
   const boosterStatus = document.getElementById('volume-booster-status');
 
@@ -768,9 +766,7 @@ async function clearLinkHistory() {
 function initializeColorStudio() {
   const eyedropperBtn = document.getElementById('eyedropper-btn');
   const clearHistoryBtn = document.getElementById('clear-color-history-btn');
-
-  // section
-  if (window.EyeDropper) {
+if (window.EyeDropper) {
     // Chrome / Chromium — use the native EyeDropper API
     eyedropperBtn?.addEventListener('click', pickColorNative);
   } else {
@@ -1540,16 +1536,13 @@ async function addRSSFeed() {
   if (!/^https?:\/\//.test(inputUrl)) {
     inputUrl = 'https://' + inputUrl;
   }
-
-  // section
-  // If it already looks like an XML/feed path, skip HTML discovery
+// If it already looks like an XML/feed path, skip HTML discovery
   const looksLikeFeed = /\.xml$|\/feed|rss|atom/i.test(inputUrl);
 
   let feedUrl = inputUrl;
 
   if (!looksLikeFeed) {
-    // section
-    showToast('🔍 Searching for RSS feed…', 'info');
+showToast('🔍 Searching for RSS feed…', 'info');
 
     try {
       const resp = await chrome.runtime.sendMessage({ action: 'fetchHTML', url: inputUrl });
@@ -1586,9 +1579,7 @@ async function addRSSFeed() {
       return;
     }
   }
-
-  // section
-  const { rssFeeds = [] } = await chrome.storage.local.get('rssFeeds');
+const { rssFeeds = [] } = await chrome.storage.local.get('rssFeeds');
 
   if (rssFeeds.some(feed => feed.url === feedUrl)) {
     showToast('Feed already saved', 'warning');
@@ -1838,8 +1829,7 @@ async function fetchLyrics() {
   document.getElementById('lyrics-output-wrapper').style.display = 'none';
 
   try {
-    // section
-    const searchResp = await chrome.runtime.sendMessage({
+const searchResp = await chrome.runtime.sendMessage({
       action: 'searchGenius',
       query: rawQuery
     });
@@ -1852,9 +1842,7 @@ async function fetchLyrics() {
 
     // Show confirmation of what we matched (lets user spot wrong hits)
     setStatus(`📄 Matched: "${matchedTitle}" by ${matchedArtist || 'Unknown'} — fetching lyrics…`);
-
-    // section
-    const lyricsResp = await chrome.runtime.sendMessage({
+const lyricsResp = await chrome.runtime.sendMessage({
       action: 'fetchGeniusLyricsPage',
       url: lyricsPageUrl
     });
@@ -1862,9 +1850,7 @@ async function fetchLyrics() {
     if (!lyricsResp || lyricsResp.error) {
       throw new Error(lyricsResp?.error || 'Lyrics page fetch failed');
     }
-
-    // section
-    const parser = new DOMParser();
+const parser = new DOMParser();
     const lyricsDoc = parser.parseFromString(lyricsResp.html, 'text/html');
 
     // Modern Genius: [data-lyrics-container="true"] divs with <br> line breaks
@@ -1887,9 +1873,7 @@ async function fetchLyrics() {
       setStatus('⚠️ Could not extract lyrics (page structure may have changed)');
       return;
     }
-
-    // section
-    clearStatus();
+clearStatus();
     renderLyrics(lyricsText);
     await setCachedLyrics({
       cacheId,
@@ -2738,10 +2722,7 @@ const UA_PROFILES = {
 };
 
 function initializeProFeatures() {
-  // section
-
-  // section
-  const darkModeToggle = document.getElementById('toggle-dark-mode');
+const darkModeToggle = document.getElementById('toggle-dark-mode');
   darkModeToggle?.addEventListener('change', async (e) => {
     const enabled = e.target.checked;
     await chrome.storage.local.set({ darkModeEnabled: enabled });
@@ -2778,9 +2759,7 @@ function initializeProFeatures() {
       showToast(`🌙 Dark Mode ${enabled ? 'ON' : 'OFF'}`, enabled ? 'success' : 'info');
     }
   });
-
-  // section
-  const volSlider = document.getElementById('volume-boost-slider');
+const volSlider = document.getElementById('volume-boost-slider');
   const volLabel = document.getElementById('volume-boost-value');
   volSlider?.addEventListener('input', () => {
     if (volLabel) volLabel.textContent = volSlider.value + '%';
@@ -2798,9 +2777,7 @@ function initializeProFeatures() {
       showToast('⚠️ Reload the page to apply volume boost', 'warning');
     }
   });
-
-  // section
-  const nukeBtn = document.getElementById('nuke-history-btn');
+const nukeBtn = document.getElementById('nuke-history-btn');
   nukeBtn?.addEventListener('click', async () => {
     const input = document.getElementById('history-cleaner-input');
     const query = (input ? input.value : '').trim();
@@ -2825,9 +2802,7 @@ function initializeProFeatures() {
       nukeBtn.textContent = '💣 Nuke';
     }
   });
-
-  // section
-  chrome.storage.local.get(['darkModeEnabled', 'popupBlockerEnabled', 'volumeLevel', 'selectedUA'], (r) => {
+chrome.storage.local.get(['darkModeEnabled', 'popupBlockerEnabled', 'volumeLevel', 'selectedUA'], (r) => {
     if (r.darkModeEnabled) {
       const el = document.getElementById('toggle-dark-mode');
       if (el) el.checked = true;
@@ -2866,9 +2841,7 @@ function initializeSettings() {
     advancedSettings.style.display = isHidden ? 'block' : 'none';
     toggleAdvancedBtn.textContent = isHidden ? 'Hide Advanced Settings' : 'Show Advanced Settings';
   });
-
-  // section
-  const uaSelect = document.getElementById('ua-switcher');
+const uaSelect = document.getElementById('ua-switcher');
   uaSelect?.addEventListener('change', async (e) => {
     const profileKey = e.target.value;
     const uaString = UA_PROFILES[profileKey] || '';
@@ -2881,9 +2854,7 @@ function initializeSettings() {
     const maskToggle = document.getElementById('toggle-browser-mask');
     if (maskToggle) maskToggle.checked = false;
   });
-
-  // section
-  const browserMaskToggle = document.getElementById('toggle-browser-mask');
+const browserMaskToggle = document.getElementById('toggle-browser-mask');
   browserMaskToggle?.addEventListener('change', async (e) => {
     const enabled = e.target.checked;
     if (!enabled) {
@@ -3149,9 +3120,6 @@ function formatDate(timestamp) {
   return date.toLocaleDateString();
 }
 
-// section
-// Version bumped to 3.0.0 in popup.html about section
-
 function createDeleteIconSVG() {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('width', '14');
@@ -3280,9 +3248,6 @@ function initializeFakeFiller() {
     }
   });
 }
-
-// section
-// Version bumped to 3.0.0 in popup.html about section
 
 // ============================================================================
 // RESIZER LOGIC
