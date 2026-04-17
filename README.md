@@ -11,7 +11,7 @@
 ![License](https://img.shields.io/badge/license-MIT-orange?style=for-the-badge)
 ![Browser Support](https://img.shields.io/badge/browsers-chrome%20%7C%20firefox-blueviolet?style=for-the-badge)
 [![Firefox Add-on](https://img.shields.io/badge/Firefox-Get%20Add--on-FF6611?style=for-the-badge&logo=firefox-browser)](https://addons.mozilla.org/en-US/firefox/addon/webgrenade/)
-[![Firefox Add-on](https://img.shields.io/badge/Chrome-Get%20Add--on-FF6611?style=for-the-badge&logo=firefox-browser)](https://chromewebstore.google.com/detail/web-grenade/epdkpdpihijpabbjhmfnegfjgaelooeb)
+[![Firefox Add-on](https://img.shields.io/badge/Chrome-Get%20Add--on-FF6611?style=for-the-badge&logo=Chrome-browser)](https://chromewebstore.google.com/detail/web-grenade/epdkpdpihijpabbjhmfnegfjgaelooeb)
 
 ---
 
