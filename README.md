@@ -11,6 +11,7 @@
 ![License](https://img.shields.io/badge/license-MIT-orange?style=for-the-badge)
 ![Browser Support](https://img.shields.io/badge/browsers-chrome%20%7C%20firefox-blueviolet?style=for-the-badge)
 [![Firefox Add-on](https://img.shields.io/badge/Firefox-Get%20Add--on-FF6611?style=for-the-badge&logo=firefox-browser)](https://addons.mozilla.org/en-US/firefox/addon/webgrenade/)
+[![Firefox Add-on](https://img.shields.io/badge/Chrome-Get%20Add--on-FF6611?style=for-the-badge&logo=firefox-browser)](https://chromewebstore.google.com/detail/web-grenade/epdkpdpihijpabbjhmfnegfjgaelooeb)
 
 ---
 
@@ -72,7 +73,7 @@ The Firefox version of WebGrenade is optimized for the Gecko engine. Due to Fire
 The Chrome version is built strictly adhering to the Manifest V3 specification and Google's Single Purpose Policy. It focuses purely on being a "Unified Utility Suite for Power Users."
 
 **Installation:**
-- [Install from Chrome Web Store](https://chromewebstore.google.com/detail/webgrenade/bblgloaglmlfdififfjjflajibogfmnm) (Official Link)
+- [Install from Chrome Web Store](https://chromewebstore.google.com/detail/web-grenade/epdkpdpihijpabbjhmfnegfjgaelooeb) (Official Link)
 - *Note: Due to stricter review processes, updates might take longer to appear in the Chrome Web Store.*
 
 ---
@@ -168,7 +169,7 @@ WebGrenade'in Firefox sürümü Gecko motoru için optimize edilmiştir. Firefox
 Chrome sürümü, Manifest V3 spesifikasyonlarına ve Google'ın "Tek Amaç" (Single Purpose) politikasına sıkı sıkıya bağlı kalınarak oluşturulmuştur. Tamamen "İleri Düzey Kullanıcılar İçin Birleşik Araç Seti" olmaya odaklanır.
 
 **Kurulum:**
-- [Chrome Web Mağazasından Kur](https://chromewebstore.google.com/detail/webgrenade/bblgloaglmlfdififfjjflajibogfmnm) (Resmi Bağlantı)
+- [Chrome Web Mağazasından Kur](https://chromewebstore.google.com/detail/web-grenade/epdkpdpihijpabbjhmfnegfjgaelooeb) (Resmi Bağlantı)
 - *Not: Daha katı inceleme süreçleri nedeniyle, güncellemelerin Chrome Web Mağazasında yayınlanması daha uzun sürebilir.*
 
 ---
