@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Web Grenade",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "The ultimate webmaster utility suite. Dark mode, volume booster, popup blocker, media grabber, video sniffer, and 15+ pro modules.",
   "author": "MacallanTheRoot",
   "action": {
@@ -48,7 +48,7 @@
         "content.js"
       ],
       "run_at": "document_start",
-      "all_frames": false
+      "all_frames": true
     }
   ],
   "browser_specific_settings": {
@@ -68,7 +68,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "inject.js"
+        "inject.js",
+        "volume-inject.js"
       ],
       "matches": [
         "<all_urls>"

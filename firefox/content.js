@@ -14,9 +14,130 @@
     let popupBlockerActive = false;
     let mutationObserver = null;
     const audioContextMap = new WeakMap(); // maps media els to audio graphs
+    let volumeBoosterEnabled = false;
+    let targetGainValue = 1.0;
+    let volumeObserver = null;
+    let volumeBridgeInjected = false;
 
     // eyedropper state
     let eyedropperKeyHandler = null;
+
+    function applyBoostToMediaElement(el) {
+        try {
+            if (audioContextMap.has(el)) {
+                const entry = audioContextMap.get(el);
+                entry.gainNode.gain.value = targetGainValue;
+                if (entry.ctx.state === 'suspended') {
+                    entry.ctx.resume().catch(err =>
+                        console.warn('[WebGrenade] ctx.resume():', err.message));
+                }
+                return true;
+            }
+
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return false;
+
+            const ctx = new AudioCtx();
+            const source = ctx.createMediaElementSource(el);
+            const gainNode = ctx.createGain();
+            gainNode.gain.value = targetGainValue;
+            source.connect(gainNode);
+            gainNode.connect(ctx.destination);
+            audioContextMap.set(el, { ctx, gainNode, source });
+
+            ctx.resume().catch(err =>
+                console.warn('[WebGrenade] ctx.resume():', err.message));
+            return true;
+        } catch (e) {
+            console.warn('[WebGrenade] VolumeBooster:', e.message);
+            return false;
+        }
+    }
+
+    function applyBoostToAllMedia() {
+        const mediaEls = Array.from(document.querySelectorAll('video, audio'));
+        let appliedCount = 0;
+        mediaEls.forEach(el => {
+            if (applyBoostToMediaElement(el)) appliedCount++;
+        });
+        return appliedCount;
+    }
+
+    function ensureVolumeObserver() {
+        if (volumeObserver) return;
+
+        volumeObserver = new MutationObserver((mutations) => {
+            if (!volumeBoosterEnabled) return;
+
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+                    if (node.matches && node.matches('video, audio')) {
+                        applyBoostToMediaElement(node);
+                    }
+
+                    if (node.querySelectorAll) {
+                        node.querySelectorAll('video, audio').forEach(applyBoostToMediaElement);
+                    }
+                });
+            });
+        });
+
+        const target = document.body || document.documentElement;
+        if (target) {
+            volumeObserver.observe(target, { childList: true, subtree: true });
+        }
+    }
+
+    function stopVolumeObserver() {
+        if (!volumeObserver) return;
+        volumeObserver.disconnect();
+        volumeObserver = null;
+    }
+
+    function injectVolumeBridgeScript() {
+        if (volumeBridgeInjected) return;
+
+        function doInject() {
+            if (!document.documentElement || document.documentElement.dataset.wgVolumeBridgeInjected === '1') return;
+            document.documentElement.dataset.wgVolumeBridgeInjected = '1';
+
+            const s = document.createElement('script');
+            s.src = chrome.runtime.getURL('volume-inject.js');
+            s.onload = () => {
+                volumeBridgeInjected = true;
+                s.remove();
+            };
+            s.onerror = () => {
+                delete document.documentElement.dataset.wgVolumeBridgeInjected;
+                s.remove();
+            };
+            document.documentElement.prepend(s);
+        }
+
+        if (document.documentElement) {
+            doInject();
+            return;
+        }
+
+        const obs = new MutationObserver(() => {
+            if (document.documentElement) {
+                obs.disconnect();
+                doInject();
+            }
+        });
+        obs.observe(document, { childList: true });
+    }
+
+    function dispatchMasterGain(level) {
+        window.dispatchEvent(new CustomEvent('__wgSetMasterVolume', {
+            detail: { level }
+        }));
+    }
+
+    // Inject as early as possible to catch site-created AudioContext graphs.
+    injectVolumeBridgeScript();
 
     // popup blocker injection logic
 
@@ -242,50 +363,25 @@
             
             // Firefox audio ctx bug: requires immediate resume
             case 'setVolume': {
-                const gainValue = Math.max(0, Math.min(5, (request.level || 100) / 100));
-                const mediaEls = Array.from(document.querySelectorAll('video, audio'));
+                targetGainValue = Math.max(0, Math.min(5, (request.level || 100) / 100));
+                volumeBoosterEnabled = true;
+                injectVolumeBridgeScript();
+                dispatchMasterGain(targetGainValue);
 
-                if (mediaEls.length === 0) {
-                    sendResponse({ success: false, error: 'No media elements found on page' });
-                    break;
-                }
+                const appliedCount = applyBoostToAllMedia();
+                ensureVolumeObserver();
 
-                mediaEls.forEach(el => {
-                    try {
-                        if (audioContextMap.has(el)) {
-                            const entry = audioContextMap.get(el);
-                            entry.gainNode.gain.value = gainValue;
-                            // hack for firefox suspended ctx
-                            if (entry.ctx.state === 'suspended') {
-                                entry.ctx.resume().catch(err =>
-                                    console.warn('[WebGrenade] ctx.resume():', err.message));
-                            }
-                        } else {
-                            // first run: setup audio graph
-                            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-                            const ctx = new AudioCtx();
-                            const source = ctx.createMediaElementSource(el);
-                            const gainNode = ctx.createGain();
-                            gainNode.gain.value = gainValue;
-                            source.connect(gainNode);
-                            gainNode.connect(ctx.destination);
-                            audioContextMap.set(el, { ctx, gainNode, source });
-
-                            // ── Firefox fix: resume suspended context immediately ──
-                            ctx.resume().catch(err =>
-                                console.warn('[WebGrenade] ctx.resume():', err.message));
-                        }
-                    } catch (e) {
-                        console.warn('[WebGrenade] VolumeBooster:', e.message);
-                    }
-                });
-
-                sendResponse({ success: true, count: mediaEls.length });
+                sendResponse({ success: true, count: appliedCount, pending: appliedCount === 0 });
                 break;
             }
 
             // resets gain without destroying the graph
             case 'resetVolume': {
+                volumeBoosterEnabled = false;
+                targetGainValue = 1.0;
+                stopVolumeObserver();
+                dispatchMasterGain(1.0);
+
                 const mediaEls = Array.from(document.querySelectorAll('video, audio'));
                 mediaEls.forEach(el => {
                     if (audioContextMap.has(el)) {

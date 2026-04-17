@@ -21,12 +21,34 @@ const state = {
   }
 };
 
+const GENIUS_LYRICS_CACHE_KEY = 'geniusLyricsCache';
+const LAST_ACTIVE_MODULE_KEY = 'lastActiveModule';
+
+function isFullViewMode() {
+  return new URLSearchParams(window.location.search).get('view') === 'full';
+}
+
+function initializeLayoutMode() {
+  if (!isFullViewMode()) return;
+  document.documentElement.classList.add('wg-fullview');
+  document.body.classList.add('wg-fullview');
+}
+
+function openFullViewDashboard() {
+  const url = chrome.runtime.getURL('popup.html?view=full');
+  chrome.tabs.create({ url }).catch(() => {
+    showToast('⚠️ Could not open full view', 'warning');
+  });
+}
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
+    initializeLayoutMode();
+
     // Restore saved custom popup height
     await restorePopupHeight();
     
@@ -53,8 +75,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeGeniusLyrics(); // v3.2.1 New: Genius Lyrics module
     initializeFakeFiller();   // v3.2.1 New: Fake Input Filler module
 
-    // Show initial module
-    showModule('media');
+    // Show the last visited module (fallback to media)
+    const initialModule = await getInitialModule();
+    showModule(initialModule);
   } catch (error) {
     console.error('Initialization error:', error);
   }
@@ -127,13 +150,14 @@ function initializeSidebar() {
   navBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       showModule(btn.dataset.module);
-      navBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
     });
   });
 }
 
 function showModule(name) {
+  const target = document.querySelector(`.module-content[data-module="${name}"]`);
+  if (!target) return;
+
   state.activeModule = name;
 
   // reset classes
@@ -142,15 +166,19 @@ function showModule(name) {
     m.style.display = 'none';
   });
 
-  const target = document.querySelector(`.module-content[data-module="${name}"]`);
-  if (target) {
-    target.style.animation = 'none';
-    target.classList.add('active');
-    target.style.display = 'block';
-    target.style.opacity = '1';
-    target.style.visibility = 'visible';
-    setTimeout(() => target.style.animation = '', 10);
-  }
+  target.style.animation = 'none';
+  target.classList.add('active');
+  target.style.display = 'block';
+  target.style.opacity = '1';
+  target.style.visibility = 'visible';
+  setTimeout(() => target.style.animation = '', 10);
+
+  // Keep sidebar state aligned even when modules are opened programmatically.
+  document.querySelectorAll('.sidebar-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.module === name);
+  });
+
+  chrome.storage.local.set({ [LAST_ACTIVE_MODULE_KEY]: name }).catch(() => {});
 
   // Module-specific initializers
   const routes = {
@@ -163,6 +191,16 @@ function showModule(name) {
   };
   
   if (routes[name]) routes[name]();
+}
+
+async function getInitialModule() {
+  const fallback = 'media';
+  const stored = await chrome.storage.local.get(LAST_ACTIVE_MODULE_KEY);
+  const saved = stored[LAST_ACTIVE_MODULE_KEY];
+
+  if (!saved || typeof saved !== 'string') return fallback;
+  const exists = !!document.querySelector(`.module-content[data-module="${saved}"]`);
+  return exists ? saved : fallback;
 }
 
 // ============================================================================
@@ -211,11 +249,15 @@ function initializeMediaCenter() {
       return;
     }
     try {
-      await chrome.tabs.sendMessage(state.currentTab.id, {
+      const result = await sendMessageToAllFrames(state.currentTab.id, {
         action: enabled ? 'setVolume' : 'resetVolume',
         level: enabled ? level : 100
       });
-      showToast(`🔊 Booster ${enabled ? 'ON' : 'OFF'}`, enabled ? 'success' : 'info');
+      if (result.success) {
+        showToast(`🔊 Booster ${enabled ? 'ON' : 'OFF'}`, enabled ? 'success' : 'info');
+      } else {
+        showToast('⚠️ No playable media found in this tab yet', 'warning');
+      }
     } catch (_) {
       showToast('⚠️ Reload the page to apply volume boost', 'warning');
     }
@@ -232,7 +274,7 @@ function initializeMediaCenter() {
     if (boosterStatus) boosterStatus.textContent = `Booster active — ${level}% amplification`;
     if (!isInjectableUrl(state.currentUrl)) return;
     try {
-      await chrome.tabs.sendMessage(state.currentTab.id, { action: 'setVolume', level });
+      await sendMessageToAllFrames(state.currentTab.id, { action: 'setVolume', level });
     } catch (_) { /* content script not ready */ }
   });
 
@@ -1746,6 +1788,7 @@ function initializeGeniusLyrics() {
   const copyLyricsBtn = document.getElementById('copy-lyrics-btn');
 
   fetchBtn?.addEventListener('click', fetchLyrics);
+  restoreCachedLyrics();
 
   copyLyricsBtn?.addEventListener('click', async () => {
     const pre = document.getElementById('lyrics-output');
@@ -1779,9 +1822,17 @@ async function fetchLyrics() {
   }
 
   const rawQuery = [artist, song].filter(Boolean).join(' ');
+  const cacheId = normalizeLyricsQuery(artist, song);
   const lyricsStatusEl = document.getElementById('lyrics-status');
   const setStatus = (msg) => { if (lyricsStatusEl) lyricsStatusEl.textContent = msg; };
   const clearStatus = () => { if (lyricsStatusEl) lyricsStatusEl.textContent = ''; };
+
+  const cachedEntry = await getCachedLyrics();
+  if (cachedEntry && cachedEntry.cacheId === cacheId && cachedEntry.lyricsText) {
+    renderLyrics(cachedEntry.lyricsText);
+    setStatus('🗂 Loaded from cache');
+    return;
+  }
 
   setStatus('🔍 Searching Genius...');
   document.getElementById('lyrics-output-wrapper').style.display = 'none';
@@ -1839,9 +1890,17 @@ async function fetchLyrics() {
 
     // section
     clearStatus();
-    const pre = document.getElementById('lyrics-output');
-    if (pre) pre.textContent = lyricsText;
-    document.getElementById('lyrics-output-wrapper').style.display = '';
+    renderLyrics(lyricsText);
+    await setCachedLyrics({
+      cacheId,
+      artist,
+      song,
+      matchedTitle,
+      matchedArtist,
+      lyricsPageUrl,
+      lyricsText,
+      savedAt: Date.now()
+    });
 
   } catch (err) {
     console.error('[WebGrenade] Lyrics fetch error:', err);
@@ -2215,6 +2274,76 @@ function isInjectableUrl(url) {
   ];
 
   return !restrictedSchemes.some(scheme => url.startsWith(scheme));
+}
+
+async function sendMessageToAllFrames(tabId, payload) {
+  if (!tabId) return { success: false, responses: [] };
+
+  let frameIds = [0];
+  if (chrome.webNavigation?.getAllFrames) {
+    frameIds = await new Promise((resolve) => {
+      chrome.webNavigation.getAllFrames({ tabId }, (frames) => {
+        if (chrome.runtime.lastError || !Array.isArray(frames)) {
+          resolve([0]);
+          return;
+        }
+        const ids = [...new Set(frames.map(f => f.frameId))];
+        resolve(ids.length ? ids : [0]);
+      });
+    });
+  }
+
+  const responses = [];
+
+  for (const frameId of frameIds) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, payload, { frameId });
+      if (response) responses.push(response);
+    } catch (_) {
+      // Frame may not host content script or may be restricted.
+    }
+  }
+
+  return {
+    success: responses.some(r => r.success),
+    responses
+  };
+}
+
+function normalizeLyricsQuery(artist, song) {
+  return [artist, song]
+    .join(' ')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function getCachedLyrics() {
+  const stored = await chrome.storage.local.get(GENIUS_LYRICS_CACHE_KEY);
+  return stored[GENIUS_LYRICS_CACHE_KEY] || null;
+}
+
+async function setCachedLyrics(cache) {
+  await chrome.storage.local.set({ [GENIUS_LYRICS_CACHE_KEY]: cache });
+}
+
+function renderLyrics(lyricsText) {
+  const pre = document.getElementById('lyrics-output');
+  if (pre) pre.textContent = lyricsText;
+  const wrapper = document.getElementById('lyrics-output-wrapper');
+  if (wrapper) wrapper.style.display = '';
+}
+
+async function restoreCachedLyrics() {
+  const cache = await getCachedLyrics();
+  if (!cache || !cache.lyricsText) return;
+
+  renderLyrics(cache.lyricsText);
+
+  const artistInput = document.getElementById('lyrics-artist-input');
+  const songInput = document.getElementById('lyrics-song-input');
+  if (artistInput && !artistInput.value) artistInput.value = cache.artist || '';
+  if (songInput && !songInput.value) songInput.value = cache.song || '';
 }
 
 // Utility injection functions
@@ -2663,35 +2792,10 @@ function initializeProFeatures() {
       return;
     }
     try {
-      const resp = await chrome.tabs.sendMessage(state.currentTab.id, { action: 'setVolume', level });
-      if (resp && resp.count > 0) {
-        showToast(`🔊 Volume set to ${level}% (${resp.count} element${resp.count > 1 ? 's' : ''})`, 'success');
-      } else if (resp && !resp.success) {
-        showToast('⚠️ ' + (resp.error || 'No media found on page'), 'warning');
-      }
-    } catch (_) {
-      // Fallback: inject inline
-      await chrome.scripting.executeScript({
-        target: { tabId: state.currentTab.id },
-        func: (gainValue) => {
-          document.querySelectorAll('video, audio').forEach(el => {
-            try {
-              if (!el._wgAudioCtx) {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                const src = ctx.createMediaElementSource(el);
-                const gain = ctx.createGain();
-                src.connect(gain);
-                gain.connect(ctx.destination);
-                el._wgGainNode = gain;
-                el._wgAudioCtx = ctx;
-              }
-              el._wgGainNode.gain.value = gainValue;
-            } catch (e) { }
-          });
-        },
-        args: [level / 100]
-      });
+      await sendMessageToAllFrames(state.currentTab.id, { action: 'setVolume', level });
       showToast(`🔊 Volume set to ${level}%`, 'success');
+    } catch (_) {
+      showToast('⚠️ Reload the page to apply volume boost', 'warning');
     }
   });
 
@@ -3184,16 +3288,30 @@ function initializeFakeFiller() {
 // RESIZER LOGIC
 // ============================================================================
 
+const POPUP_MIN_HEIGHT = 520;
+const POPUP_DEFAULT_HEIGHT = 560;
+const POPUP_MAX_HEIGHT_LIMIT = 600;
+
+function getPopupMaxHeight() {
+  return POPUP_MAX_HEIGHT_LIMIT;
+}
+
 async function restorePopupHeight() {
-  const data = await chrome.storage.local.get('dashboardHeight');
-  if (data.dashboardHeight) {
-    applyPopupHeight(data.dashboardHeight);
+  if (isFullViewMode()) {
+    document.body.style.height = '100vh';
+    document.documentElement.style.height = '100vh';
+    document.body.style.width = '100%';
+    document.documentElement.style.width = '100%';
+    return;
   }
+
+  const data = await chrome.storage.local.get('dashboardHeight');
+  applyPopupHeight(data.dashboardHeight || POPUP_DEFAULT_HEIGHT);
 }
 
 function applyPopupHeight(height) {
-  const minHeight = 450;
-  const maxHeight = 600;
+  const minHeight = POPUP_MIN_HEIGHT;
+  const maxHeight = getPopupMaxHeight();
   // Ensure within bounds
   let finalHeight = Math.max(minHeight, Math.min(height, maxHeight));
   document.body.style.height = `${finalHeight}px`;
@@ -3204,35 +3322,97 @@ function initResizer() {
   const handle = document.getElementById('wg-resize-handle');
   if (!handle) return;
 
+  if (isFullViewMode()) {
+    handle.style.display = 'none';
+    return;
+  }
+
   let isResizing = false;
   let startY;
   let startHeight;
 
-  handle.addEventListener('mousedown', (e) => {
+  const beginResize = (clientY) => {
     isResizing = true;
-    startY = e.clientY;
+    startY = clientY;
     startHeight = document.documentElement.clientHeight || document.body.clientHeight;
     document.body.style.cursor = 'ns-resize';
+    handle.classList.add('is-resizing');
+  };
+
+  const moveResize = (clientY) => {
+    if (!isResizing) return;
+    const deltaY = clientY - startY;
+    const newHeight = startHeight + deltaY;
+    applyPopupHeight(newHeight);
+  };
+
+  const endResize = async () => {
+    if (!isResizing) return;
+    isResizing = false;
+    document.body.style.cursor = '';
+    handle.classList.remove('is-resizing');
+
+    const finalHeight = document.documentElement.clientHeight || document.body.clientHeight;
+    await chrome.storage.local.set({ dashboardHeight: finalHeight });
+  };
+
+  const pointerSupported = typeof window.PointerEvent !== 'undefined';
+  if (pointerSupported) {
+    handle.addEventListener('pointerdown', (e) => {
+      beginResize(e.clientY);
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch (_) {
+        // Pointer capture may fail on some popup implementations.
+      }
+      e.preventDefault();
+    });
+  }
+
+  handle.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    openFullViewDashboard();
+  });
+
+  handle.addEventListener('mousedown', (e) => {
+    if (pointerSupported) return;
+    beginResize(e.clientY);
     e.preventDefault();
   });
 
+  handle.addEventListener('touchstart', (e) => {
+    if (pointerSupported) return;
+    if (!e.touches || !e.touches[0]) return;
+    beginResize(e.touches[0].clientY);
+    e.preventDefault();
+  }, { passive: false });
+
   document.addEventListener('mousemove', (e) => {
-    if (!isResizing) return;
-    
-    // Calculate new height (positive move is down, but popup grows down so delta is direct)
-    const deltaY = e.clientY - startY; 
-    let newHeight = startHeight + deltaY;
-    
-    applyPopupHeight(newHeight);
+    moveResize(e.clientY);
   });
 
+  document.addEventListener('pointermove', (e) => {
+    if (!pointerSupported) return;
+    moveResize(e.clientY);
+  });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!e.touches || !e.touches[0]) return;
+    moveResize(e.touches[0].clientY);
+  }, { passive: true });
+
   document.addEventListener('mouseup', async () => {
-    if (isResizing) {
-      isResizing = false;
-      document.body.style.cursor = '';
-      
-      const finalHeight = document.documentElement.clientHeight || document.body.clientHeight;
-      await chrome.storage.local.set({ dashboardHeight: finalHeight });
-    }
+    if (pointerSupported) return;
+    await endResize();
+  });
+
+  document.addEventListener('pointerup', async () => {
+    if (!pointerSupported) return;
+    await endResize();
+  });
+
+  document.addEventListener('touchend', async () => {
+    if (pointerSupported) return;
+    await endResize();
   });
 }
