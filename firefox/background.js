@@ -2,6 +2,234 @@
 
 // DNR rule ID for User-Agent switcher (Ad Blocker removed in v3.1)
 const UA_RULE_ID = 2001;
+const FOCUS_BLOCK_RULE_BASE = 3000;
+const FOCUS_BLOCK_RULE_LIMIT = 200;
+let lastFocusPhaseNotification = 'idle';
+let fallbackFocusTickHandle = null;
+
+const fallbackFocusState = {
+  isRunning: false,
+  isPaused: false,
+  phase: 'idle',
+  remainingMs: 0,
+  focusMinutes: 25,
+  breakMinutes: 5
+};
+
+function cloneFallbackFocusState() {
+  return {
+    isRunning: fallbackFocusState.isRunning,
+    isPaused: fallbackFocusState.isPaused,
+    phase: fallbackFocusState.phase,
+    remainingMs: fallbackFocusState.remainingMs,
+    focusMinutes: fallbackFocusState.focusMinutes,
+    breakMinutes: fallbackFocusState.breakMinutes
+  };
+}
+
+function notifyFallbackPhaseChange() {
+  chrome.runtime.sendMessage({
+    action: 'focusPhaseChanged',
+    state: cloneFallbackFocusState()
+  }).catch(() => {});
+}
+
+function notifyFocusTransition(state) {
+  if (!state || !state.isRunning || state.isPaused) return;
+  if (state.phase === lastFocusPhaseNotification) return;
+
+  lastFocusPhaseNotification = state.phase;
+
+  if (!chrome.notifications || !chrome.notifications.create) return;
+
+  const isBreak = state.phase === 'break';
+  const title = isBreak ? 'WebGrenade Focus: Break Time' : 'WebGrenade Focus: Focus Time';
+  const message = isBreak
+    ? 'Focus session finished. Time for a break.'
+    : 'Break finished. Back to focus.';
+
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icons/icon-128.png',
+    title,
+    message
+  }, () => {});
+}
+
+function stopFallbackTicker() {
+  if (fallbackFocusTickHandle) {
+    clearInterval(fallbackFocusTickHandle);
+    fallbackFocusTickHandle = null;
+  }
+}
+
+function ensureFallbackTicker() {
+  if (fallbackFocusTickHandle) return;
+
+  fallbackFocusTickHandle = setInterval(() => {
+    if (!fallbackFocusState.isRunning || fallbackFocusState.isPaused) return;
+
+    fallbackFocusState.remainingMs = Math.max(0, fallbackFocusState.remainingMs - 1000);
+    if (fallbackFocusState.remainingMs > 0) return;
+
+    if (fallbackFocusState.phase === 'focus') {
+      fallbackFocusState.phase = 'break';
+      fallbackFocusState.remainingMs = fallbackFocusState.breakMinutes * 60 * 1000;
+      notifyFallbackPhaseChange();
+      return;
+    }
+
+    fallbackFocusState.phase = 'focus';
+    fallbackFocusState.remainingMs = fallbackFocusState.focusMinutes * 60 * 1000;
+    notifyFallbackPhaseChange();
+  }, 1000);
+}
+
+function runFallbackFocusCommand(command, payload = {}) {
+  if (command === 'start') {
+    const focusMinutes = Number.isFinite(payload.focusMinutes) ? Math.max(1, payload.focusMinutes) : 25;
+    const breakMinutes = Number.isFinite(payload.breakMinutes) ? Math.max(1, payload.breakMinutes) : 5;
+
+    fallbackFocusState.focusMinutes = focusMinutes;
+    fallbackFocusState.breakMinutes = breakMinutes;
+    fallbackFocusState.isRunning = true;
+    fallbackFocusState.isPaused = false;
+    fallbackFocusState.phase = 'focus';
+    fallbackFocusState.remainingMs = focusMinutes * 60 * 1000;
+
+    ensureFallbackTicker();
+    notifyFallbackPhaseChange();
+    return { success: true, state: cloneFallbackFocusState() };
+  }
+
+  if (command === 'pause') {
+    if (fallbackFocusState.isRunning) {
+      fallbackFocusState.isPaused = true;
+    }
+    return { success: true, state: cloneFallbackFocusState() };
+  }
+
+  if (command === 'resume') {
+    if (fallbackFocusState.isRunning) {
+      fallbackFocusState.isPaused = false;
+    }
+    return { success: true, state: cloneFallbackFocusState() };
+  }
+
+  if (command === 'reset') {
+    fallbackFocusState.isRunning = false;
+    fallbackFocusState.isPaused = false;
+    fallbackFocusState.phase = 'idle';
+    fallbackFocusState.remainingMs = 0;
+    stopFallbackTicker();
+    notifyFallbackPhaseChange();
+    return { success: true, state: cloneFallbackFocusState() };
+  }
+
+  if (command === 'getState') {
+    return { success: true, state: cloneFallbackFocusState() };
+  }
+
+  return { success: false, error: `Unknown command: ${command}` };
+}
+
+function getFocusRuleIds() {
+  return Array.from({ length: FOCUS_BLOCK_RULE_LIMIT }, (_, idx) => FOCUS_BLOCK_RULE_BASE + idx);
+}
+
+function normalizeBlockedHost(raw) {
+  const normalized = String(raw || '').trim().toLowerCase();
+  if (!normalized) return '';
+
+  const withoutProto = normalized.replace(/^https?:\/\//, '');
+  const host = withoutProto.split('/')[0].replace(/^\*+\.?/, '').replace(/\.+$/, '');
+  return host;
+}
+
+function buildFocusBlockRules(entries) {
+  const uniqueHosts = [...new Set((entries || []).map(normalizeBlockedHost).filter(Boolean))].slice(0, FOCUS_BLOCK_RULE_LIMIT);
+
+  return uniqueHosts.map((host, idx) => ({
+    id: FOCUS_BLOCK_RULE_BASE + idx,
+    priority: 10,
+    action: { type: 'block' },
+    condition: {
+      urlFilter: `||${host}^`,
+      resourceTypes: ['main_frame', 'sub_frame']
+    }
+  }));
+}
+
+function updateFocusBlockRules(active) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['focusBlockedSites'], (data) => {
+      const addRules = active ? buildFocusBlockRules(data.focusBlockedSites || []) : [];
+      chrome.declarativeNetRequest.updateDynamicRules(
+        { removeRuleIds: getFocusRuleIds(), addRules },
+        () => {
+          if (chrome.runtime.lastError) {
+            resolve({ success: false, error: chrome.runtime.lastError.message });
+            return;
+          }
+          resolve({ success: true, count: addRules.length });
+        }
+      );
+    });
+  });
+}
+
+async function ensureOffscreenDocument() {
+  if (!chrome.offscreen || !chrome.offscreen.createDocument) {
+    return { success: false, error: 'Offscreen API unavailable' };
+  }
+
+  try {
+    if (chrome.offscreen.hasDocument) {
+      const exists = await chrome.offscreen.hasDocument();
+      if (exists) return { success: true };
+    }
+
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['DOM_PARSER'],
+      justification: 'Maintain Pomodoro timer while service worker sleeps.'
+    });
+
+    return { success: true };
+  } catch (error) {
+    const msg = String(error?.message || 'Unknown offscreen error');
+    if (msg.includes('Only a single offscreen')) {
+      return { success: true };
+    }
+    return { success: false, error: msg };
+  }
+}
+
+async function sendFocusCommand(command, payload) {
+  const ready = await ensureOffscreenDocument();
+  if (!ready.success) {
+    return runFallbackFocusCommand(command, payload || {});
+  }
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      target: 'offscreen-focus',
+      command,
+      payload: payload || {}
+    });
+    return response || { success: false, error: 'No offscreen response' };
+  } catch (error) {
+    return { success: false, error: String(error?.message || error) };
+  }
+}
+
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timeoutId));
+}
 
 
 /* Context menus */
@@ -137,7 +365,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // proxy RSS fetch to bypass CORS
   if (request.action === 'fetchRSS') {
-    fetch(request.url, { headers: { 'Accept': 'application/rss+xml, application/xml, text/xml, */*' } })
+    fetchWithTimeout(request.url, {
+      headers: { 'Accept': 'application/rss+xml, application/xml, text/xml, */*' }
+    })
       .then(response => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.text();
@@ -151,7 +381,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // proxy HTML fetch for rss auto-discovery
   if (request.action === 'fetchHTML') {
-    fetch(request.url, { headers: { 'Accept': 'text/html, */*' } })
+    fetchWithTimeout(request.url, {
+      headers: { 'Accept': 'text/html, */*' }
+    })
       .then(response => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.text();
@@ -174,6 +406,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           ]
         },
         condition: {
+          urlFilter: '|http',
           resourceTypes: ['main_frame', 'sub_frame', 'xmlhttprequest', 'script', 'image', 'stylesheet', 'font', 'media', 'websocket']
         }
       };
@@ -228,6 +461,97 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'open_allowed_popup' && request.url) {
     chrome.tabs.create({ url: request.url, active: true });
     sendResponse({ success: true });
+    return true;
+  }
+
+  if (request.action === 'addTemporaryPopupWhitelist' && request.url) {
+    const now = Date.now();
+    const ttlMs = Number.isFinite(request.ttlMs) ? Math.max(1000, request.ttlMs) : 120000;
+    const expiresAt = now + ttlMs;
+
+    let parsed;
+    try {
+      parsed = new URL(request.url);
+    } catch (_) {
+      sendResponse({ success: false, error: 'Invalid URL' });
+      return true;
+    }
+
+    chrome.storage.local.get(['popupTempWhitelist'], (data) => {
+      const existing = Array.isArray(data.popupTempWhitelist) ? data.popupTempWhitelist : [];
+      const filtered = existing.filter((entry) => entry && entry.expiresAt && entry.expiresAt > now);
+
+      filtered.push({
+        url: parsed.href,
+        domain: parsed.hostname,
+        expiresAt
+      });
+
+      chrome.storage.local.set({ popupTempWhitelist: filtered }, () => {
+        sendResponse({ success: true, expiresAt });
+      });
+    });
+    return true;
+  }
+
+  if (request.action === 'focusTimerCommand') {
+    sendFocusCommand(request.command, request.payload || {})
+      .then(async (result) => {
+        if (!result?.success) {
+          sendResponse(result || { success: false, error: 'Focus command failed' });
+          return;
+        }
+
+        if (result.state) {
+          await chrome.storage.local.set({ focusTimerState: result.state });
+          const shouldBlock = result.state.isRunning && !result.state.isPaused && result.state.phase === 'focus';
+          await updateFocusBlockRules(shouldBlock);
+
+          if (!result.state.isRunning) {
+            lastFocusPhaseNotification = 'idle';
+          } else {
+            notifyFocusTransition(result.state);
+          }
+        }
+
+        sendResponse(result);
+      })
+      .catch((error) => {
+        sendResponse({ success: false, error: String(error?.message || error) });
+      });
+    return true;
+  }
+
+  if (request.action === 'focusPhaseChanged' && request.state) {
+    chrome.storage.local.set({ focusTimerState: request.state }, async () => {
+      const shouldBlock = request.state.isRunning && !request.state.isPaused && request.state.phase === 'focus';
+      const blockResult = await updateFocusBlockRules(shouldBlock);
+      if (!request.state.isRunning) {
+        lastFocusPhaseNotification = 'idle';
+      } else {
+        notifyFocusTransition(request.state);
+      }
+      sendResponse({ success: true, blockResult });
+    });
+    return true;
+  }
+
+  if (request.action === 'focusSyncBlocking') {
+    sendFocusCommand('getState', {})
+      .then(async (result) => {
+        if (!result?.success || !result.state) {
+          sendResponse(result || { success: false, error: 'No focus state available' });
+          return;
+        }
+
+        const shouldBlock = result.state.isRunning && !result.state.isPaused && result.state.phase === 'focus';
+        const blockResult = await updateFocusBlockRules(shouldBlock);
+        sendResponse({ success: true, state: result.state, blockResult });
+      })
+      .catch((error) => {
+        sendResponse({ success: false, error: String(error?.message || error) });
+      });
+    return true;
   }
 
   // Genius search API (no auth needed)

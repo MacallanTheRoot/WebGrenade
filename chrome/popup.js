@@ -70,6 +70,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeCookieManager();
     initializeRSSReader();
     initializeUtilities();
+    initializeUtilitiesButtons();
     initializeSettings();
     initializeProFeatures();  // v3.0 Pro Features
     initializeGeniusLyrics(); // Genius Lyrics module
@@ -140,6 +141,26 @@ function hideStatus(elementId) {
   }
 }
 
+function getPopupModuleContext() {
+  return {
+    state,
+    chrome,
+    deps: {
+      showToast,
+      showStatus,
+      hideStatus,
+      copyToClipboard,
+      formatDate,
+      isInjectableUrl,
+      sendMessageToAllFrames,
+      isYouTubeUrl,
+      extractVideoId,
+      createEditIconSVG,
+      createCloseIconSVG
+    }
+  };
+}
+
 // ============================================================================
 // SIDEBAR NAVIGATION
 // ============================================================================
@@ -152,6 +173,16 @@ function initializeSidebar() {
       showModule(btn.dataset.module);
     });
   });
+}
+
+function initializeUtilitiesButtons() {
+  // Open Color Studio from Utilities card
+  const openColorBtn = document.getElementById('open-color-studio-btn');
+  if (openColorBtn) {
+    openColorBtn.addEventListener('click', () => {
+      showModule('color');
+    });
+  }
 }
 
 function showModule(name) {
@@ -208,317 +239,15 @@ async function getInitialModule() {
 // ============================================================================
 
 function initializeMediaCenter() {
-  const downloadBtn = document.getElementById('download-btn');
-  const formatSelect = document.getElementById('format-select');
-  const qualitySelect = document.getElementById('quality-select');
-
-  downloadBtn?.addEventListener('click', downloadVideo);
-
-  formatSelect?.addEventListener('change', () => {
-    qualitySelect.disabled = formatSelect.value === 'mp3';
-  });
-const boosterToggle = document.getElementById('toggle-volume-booster');
-  const boosterSlider = document.getElementById('volume-boost-slider');
-  const boosterStatus = document.getElementById('volume-booster-status');
-
-  // Restore saved toggle state
-  chrome.storage.local.get(['volumeBoosterEnabled', 'volumeBoosterLevel'], (data) => {
-    const enabled = data.volumeBoosterEnabled || false;
-    const level = data.volumeBoosterLevel || 100;
-    if (boosterToggle) boosterToggle.checked = enabled;
-    if (boosterSlider) { boosterSlider.value = level; boosterSlider.disabled = !enabled; }
-    if (boosterStatus) boosterStatus.textContent = enabled
-      ? `Booster active — ${level}% amplification`
-      : 'Toggle ON to amplify audio (0–300%)';
-    document.getElementById('volume-boost-value').textContent = level + '%';
-  });
-
-  boosterToggle?.addEventListener('change', async (e) => {
-    const enabled = e.target.checked;
-    const level = parseInt(boosterSlider?.value || 100);
-    await chrome.storage.local.set({ volumeBoosterEnabled: enabled });
-    if (boosterSlider) boosterSlider.disabled = !enabled;
-    if (boosterStatus) boosterStatus.textContent = enabled
-      ? `Booster active — ${level}% amplification`
-      : 'Toggle ON to amplify audio (0–300%)';
-
-    if (!isInjectableUrl(state.currentUrl)) {
-      showToast('⚠️ Cannot boost audio on this page', 'warning');
-      return;
-    }
-    try {
-      const result = await sendMessageToAllFrames(state.currentTab.id, {
-        action: enabled ? 'setVolume' : 'resetVolume',
-        level: enabled ? level : 100
-      });
-      if (result.success) {
-        showToast(`🔊 Booster ${enabled ? 'ON' : 'OFF'}`, enabled ? 'success' : 'info');
-      } else {
-        showToast('⚠️ No playable media found in this tab yet', 'warning');
-      }
-    } catch (_) {
-      showToast('⚠️ Reload the page to apply volume boost', 'warning');
-    }
-  });
-
-  // Volume slider — only active when toggle is ON
-  boosterSlider?.addEventListener('input', async () => {
-    const level = parseInt(boosterSlider.value);
-    document.getElementById('volume-boost-value').textContent = level + '%';
-    await chrome.storage.local.set({ volumeBoosterLevel: level });
-
-    const enabled = boosterToggle?.checked;
-    if (!enabled) return; // slider disabled state, guard anyway
-    if (boosterStatus) boosterStatus.textContent = `Booster active — ${level}% amplification`;
-    if (!isInjectableUrl(state.currentUrl)) return;
-    try {
-      await sendMessageToAllFrames(state.currentTab.id, { action: 'setVolume', level });
-    } catch (_) { /* content script not ready */ }
-  });
-
-  // Load download history
-  loadDownloadHistory();
+  window.WGMediaModule?.initialize(getPopupModuleContext());
 }
 
-// v3.2: HTML5 Video Sniffer — ask content script for native <video> sources
 async function sniffPageVideos() {
-  const section = document.getElementById('native-video-section');
-  const listEl = document.getElementById('native-video-list');
-  if (!section || !listEl) return;
-
-  // Hide section until we know there are results
-  section.style.display = 'none';
-  listEl.textContent = '';
-
-  let response;
-  try {
-    response = await chrome.tabs.sendMessage(state.currentTab.id, { action: 'sniffVideos' });
-  } catch {
-    return; // content script not reachable (e.g., chrome:// page)
-  }
-
-  const videos = response?.videos;
-  if (!videos || videos.length === 0) return;
-
-  section.style.display = 'block';
-
-  videos.forEach(({ label, urls }) => {
-    const card = document.createElement('div');
-    card.className = 'history-item';
-    card.style.cssText = 'flex-direction:column;align-items:flex-start;gap:6px;padding:10px;';
-
-    const labelEl = document.createElement('div');
-    labelEl.className = 'history-item-title';
-    labelEl.textContent = label;
-    card.appendChild(labelEl);
-
-    // Show the first URL as a direct link + download button
-    const primaryUrl = urls[0];
-
-    const actionsRow = document.createElement('div');
-    actionsRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
-
-    const openBtn = document.createElement('a');
-    openBtn.className = 'btn btn-secondary';
-    openBtn.style.fontSize = '11px';
-    openBtn.href = primaryUrl;
-    openBtn.target = '_blank';
-    openBtn.rel = 'noopener';
-    openBtn.textContent = '▶ Open';
-
-    const dlBtn = document.createElement('a');
-    dlBtn.className = 'btn btn-primary';
-    dlBtn.style.fontSize = '11px';
-    dlBtn.href = primaryUrl;
-    dlBtn.download = label.replace(/[^a-z0-9 _-]/gi, '_').trim() || 'video';
-    dlBtn.textContent = '⬇ Download';
-
-    actionsRow.appendChild(openBtn);
-    actionsRow.appendChild(dlBtn);
-    card.appendChild(actionsRow);
-
-    // If there are multiple source URLs, list them
-    if (urls.length > 1) {
-      urls.slice(1).forEach((u, i) => {
-        const extraLink = document.createElement('a');
-        extraLink.href = u;
-        extraLink.target = '_blank';
-        extraLink.rel = 'noopener';
-        extraLink.className = 'btn-text';
-        extraLink.style.fontSize = '10px';
-        extraLink.textContent = `Source ${i + 2}: ${new URL(u).pathname.split('/').pop() || u}`;
-        card.appendChild(extraLink);
-      });
-    }
-
-    listEl.appendChild(card);
-  });
+  return window.WGMediaModule?.sniffPageVideos(getPopupModuleContext());
 }
 
 async function checkForYouTubeVideo() {
-  const url = state.currentUrl;
-
-  if (!isYouTubeUrl(url)) {
-    showStatus('media-status', '⚠️ Not a YouTube page', 'warning');
-    document.getElementById('video-info')?.style.setProperty('display', 'none');
-    document.getElementById('download-controls')?.style.setProperty('display', 'none');
-    return;
-  }
-
-  const videoId = extractVideoId(url);
-  if (!videoId) {
-    showStatus('media-status', '❌ Could not extract video ID', 'error');
-    return;
-  }
-
-  if (!state.apiConfig.configured) {
-    showStatus('media-status', '⚠️ API not configured. Go to Settings.', 'warning');
-    return;
-  }
-
-  hideStatus('media-status');
-  await fetchVideoInfo(videoId);
-}
-
-async function fetchVideoInfo(videoId) {
-  try {
-    showStatus('media-status', '🔄 Loading video info...', 'info');
-
-    const endpoint = `https://${state.apiConfig.host}/v2/video/details?videoId=${videoId}`;
-
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'X-RapidAPI-Key': state.apiConfig.key,
-        'X-RapidAPI-Host': state.apiConfig.host
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    state.videoData = data;
-
-    displayVideoInfo(data);
-    hideStatus('media-status');
-
-  } catch (error) {
-    console.error('Video fetch error:', error);
-    showStatus('media-status', `❌ Failed to load video: ${error.message}`, 'error');
-  }
-}
-
-function displayVideoInfo(data) {
-  const videoInfo = document.getElementById('video-info');
-  const downloadControls = document.getElementById('download-controls');
-  const thumbnail = document.getElementById('video-thumbnail');
-  const title = document.getElementById('video-title');
-  const videoUrl = document.getElementById('video-url');
-
-  if (data.thumbnail) {
-    thumbnail.src = data.thumbnail;
-  }
-
-  if (data.title) {
-    title.textContent = data.title;
-  }
-
-  if (videoUrl) {
-    videoUrl.textContent = state.currentUrl;
-  }
-
-  videoInfo.style.display = 'block';
-  downloadControls.style.display = 'block';
-}
-
-async function downloadVideo() {
-  const format = document.getElementById('format-select').value;
-  const quality = document.getElementById('quality-select').value;
-
-  if (!state.videoData) {
-    showToast('No video data available', 'error');
-    return;
-  }
-
-  // Find matching format/quality
-  let downloadUrl = null;
-
-  if (format === 'mp4' && state.videoData.formats) {
-    const videoFormats = state.videoData.formats.filter(f => f.mimeType?.includes('video/mp4'));
-    const matchingFormat = videoFormats.find(f => f.qualityLabel === quality) || videoFormats[0];
-    downloadUrl = matchingFormat?.url;
-  } else if (format === 'mp3' && state.videoData.audioFormats) {
-    const audioFormat = state.videoData.audioFormats[0];
-    downloadUrl = audioFormat?.url;
-  }
-
-  if (!downloadUrl) {
-    showToast('Download URL not available', 'error');
-    return;
-  }
-
-  // Open download in new tab
-  await chrome.tabs.create({ url: downloadUrl, active: false });
-
-  // Save to history
-  await addToDownloadHistory({
-    title: state.videoData.title || 'Unknown',
-    url: state.currentUrl,
-    format: format,
-    quality: format === 'mp4' ? quality : 'Audio',
-    timestamp: Date.now()
-  });
-
-  showToast('✅ Download started!', 'success');
-  loadDownloadHistory();
-}
-
-async function loadDownloadHistory() {
-  const { downloadHistory = [] } = await chrome.storage.local.get('downloadHistory');
-  const historyList = document.getElementById('download-history-list');
-
-  if (!historyList) return;
-
-  historyList.textContent = '';
-
-  if (downloadHistory.length === 0) {
-    const emptyDiv = document.createElement('div');
-    emptyDiv.className = 'empty-state';
-    emptyDiv.textContent = 'No downloads yet';
-    historyList.appendChild(emptyDiv);
-    return;
-  }
-
-  const items = downloadHistory.slice(-5).reverse();
-
-  items.forEach(item => {
-    const historyItem = document.createElement('div');
-    historyItem.className = 'history-item';
-
-    const content = document.createElement('div');
-    content.className = 'history-item-content';
-
-    const title = document.createElement('div');
-    title.className = 'history-item-title';
-    title.textContent = item.title;
-
-    const meta = document.createElement('div');
-    meta.className = 'history-item-meta';
-    meta.textContent = `${item.format.toUpperCase()} • ${item.quality} • ${formatDate(item.timestamp)}`;
-
-    content.appendChild(title);
-    content.appendChild(meta);
-    historyItem.appendChild(content);
-    historyList.appendChild(historyItem);
-  });
-}
-
-async function addToDownloadHistory(item) {
-  const { downloadHistory = [] } = await chrome.storage.local.get('downloadHistory');
-  downloadHistory.push(item);
-  await chrome.storage.local.set({ downloadHistory });
+  return window.WGMediaModule?.checkForYouTubeVideo(getPopupModuleContext());
 }
 
 // ============================================================================
@@ -918,550 +647,19 @@ async function clearColorHistory() {
 // ============================================================================
 
 function initializeSecurityHub() {
-  const generateBtn = document.getElementById('generate-password-btn');
-  const copyBtn = document.getElementById('copy-password-btn');
-  const lengthSlider = document.getElementById('password-length');
-  const lengthValue = document.getElementById('password-length-value');
-
-  // Initialize with a password
-  generatePassword();
-
-  generateBtn?.addEventListener('click', generatePassword);
-  copyBtn?.addEventListener('click', () => {
-    const password = document.getElementById('generated-password').value;
-    if (password) {
-      copyToClipboard(password);
-      showToast('✅ Password copied!', 'success');
-    }
-  });
-
-  lengthSlider?.addEventListener('input', () => {
-    lengthValue.textContent = lengthSlider.value;
-    generatePassword();
-  });
-
-  // Re-generate on option change
-  document.querySelectorAll('#include-uppercase, #include-lowercase, #include-numbers, #include-symbols')
-    .forEach(checkbox => {
-      checkbox.addEventListener('change', generatePassword);
-    });
-}
-
-function generatePassword() {
-  const length = parseInt(document.getElementById('password-length').value);
-  const includeUppercase = document.getElementById('include-uppercase').checked;
-  const includeLowercase = document.getElementById('include-lowercase').checked;
-  const includeNumbers = document.getElementById('include-numbers').checked;
-  const includeSymbols = document.getElementById('include-symbols').checked;
-
-  let charset = '';
-  if (includeUppercase) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  if (includeLowercase) charset += 'abcdefghijklmnopqrstuvwxyz';
-  if (includeNumbers) charset += '0123456789';
-  if (includeSymbols) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
-
-  if (charset.length === 0) {
-    document.getElementById('generated-password').value = '';
-    updateStrengthMeter(0, 'none');
-    return;
-  }
-
-  let password = '';
-  const array = new Uint32Array(length);
-  crypto.getRandomValues(array);
-
-  for (let i = 0; i < length; i++) {
-    password += charset[array[i] % charset.length];
-  }
-
-  document.getElementById('generated-password').value = password;
-
-  // Calculate and display strength
-  const strength = calculatePasswordStrength(password, charset.length);
-  updateStrengthMeter(strength.score, strength.label);
-}
-
-function calculatePasswordStrength(password, charsetSize) {
-  // Calculate entropy: log2(charsetSize^length)
-  const entropy = password.length * Math.log2(charsetSize);
-
-  let score = 0;
-  let label = 'weak';
-
-  if (entropy < 40) {
-    score = 25;
-    label = 'weak';
-  } else if (entropy < 60) {
-    score = 50;
-    label = 'fair';
-  } else if (entropy < 80) {
-    score = 75;
-    label = 'good';
-  } else {
-    score = 100;
-    label = 'strong';
-  }
-
-  return { score, label, entropy };
-}
-
-function updateStrengthMeter(score, label) {
-  const strengthBar = document.getElementById('strength-bar');
-  const strengthText = document.getElementById('strength-text');
-
-  strengthBar.className = `strength-bar ${label}`;
-  strengthText.className = `strength-text ${label}`;
-  strengthText.textContent = label === 'none' ? '-' : label.toUpperCase();
+  // Legacy implementation moved to module-securityhub-advanced.js.
 }
 
 // ============================================================================
 // MODULE 5: COOKIE MANAGER (Professional Edition)
 // ============================================================================
 
-let currentCookies = [];
-let editingCookie = null;
-
 function initializeCookieManager() {
-  const searchInput = document.getElementById('cookie-search');
-  const addBtn = document.getElementById('add-cookie-btn');
-  const deleteAllBtn = document.getElementById('delete-all-cookies-btn');
-  const exportBtn = document.getElementById('export-cookies-btn');
-  const importBtn = document.getElementById('import-cookies-btn');
-  const saveCookieBtn = document.getElementById('save-cookie-btn');
-  const cancelEditBtn = document.getElementById('cancel-edit-cookie-btn');
-  const formatBtn = document.getElementById('format-cookie-value-btn');
-  const sessionCheckbox = document.getElementById('edit-cookie-session');
-  const confirmImportBtn = document.getElementById('confirm-import-btn');
-  const closeImportBtnX = document.getElementById('close-import-modal-x');
-  const cancelImportBtn = document.getElementById('cancel-import-btn');
-
-  searchInput?.addEventListener('input', (e) => {
-    filterCookies(e.target.value);
-  });
-
-  addBtn?.addEventListener('click', showAddCookieForm);
-  deleteAllBtn?.addEventListener('click', deleteAllCookies);
-  exportBtn?.addEventListener('click', exportCookiesToJSON);
-  importBtn?.addEventListener('click', openImportModal);
-  saveCookieBtn?.addEventListener('click', saveCookie);
-  cancelEditBtn?.addEventListener('click', cancelEdit);
-  formatBtn?.addEventListener('click', formatCookieValue);
-  confirmImportBtn?.addEventListener('click', importCookiesFromJSON);
-  closeImportBtnX?.addEventListener('click', closeImportModal);
-  cancelImportBtn?.addEventListener('click', closeImportModal);
-
-  // Event delegation for cookie list actions
-  const cookieList = document.getElementById('cookie-list');
-  cookieList?.addEventListener('click', (e) => {
-    const editBtn = e.target.closest('.cookie-edit-btn');
-    const deleteBtn = e.target.closest('.cookie-delete-btn');
-
-    if (editBtn) {
-      const index = parseInt(editBtn.dataset.index);
-      editCookie(index);
-    } else if (deleteBtn) {
-      const index = parseInt(deleteBtn.dataset.index);
-      deleteCookie(index);
-    }
-  });
-
-  // Toggle expiry date picker based on session checkbox
-  sessionCheckbox?.addEventListener('change', (e) => {
-    const expiryGroup = document.getElementById('cookie-expiry-group');
-    if (expiryGroup) {
-      expiryGroup.style.display = e.target.checked ? 'none' : 'block';
-    }
-  });
+  window.WGCookieModule?.initialize(getPopupModuleContext());
 }
 
 async function loadCookies() {
-  const domain = new URL(state.currentUrl).hostname;
-  const domainDisplay = document.getElementById('cookie-domain-display');
-  if (domainDisplay) {
-    domainDisplay.textContent = domain;
-  }
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      action: 'getCookies',
-      url: state.currentUrl
-    });
-
-    currentCookies = response.cookies || [];
-    displayCookies(currentCookies);
-
-  } catch (error) {
-    console.error('Cookie load error:', error);
-    showToast('❌ Failed to load cookies', 'error');
-  }
-}
-
-function displayCookies(cookies) {
-  const cookieList = document.getElementById('cookie-list');
-
-  if (!cookieList) return;
-
-  cookieList.textContent = '';
-
-  if (cookies.length === 0) {
-    const emptyDiv = document.createElement('div');
-    emptyDiv.className = 'empty-state';
-    emptyDiv.textContent = 'No cookies found';
-    cookieList.appendChild(emptyDiv);
-    return;
-  }
-
-  cookies.forEach((cookie, index) => {
-    const cookieItem = document.createElement('div');
-    cookieItem.className = 'cookie-item';
-
-    const header = document.createElement('div');
-    header.className = 'cookie-item-header';
-
-    const name = document.createElement('div');
-    name.className = 'cookie-item-name';
-    name.textContent = cookie.name;
-
-    const actions = document.createElement('div');
-    actions.className = 'cookie-item-actions';
-
-    // Edit button
-    const editBtn = document.createElement('button');
-    editBtn.className = 'btn btn-icon cookie-edit-btn';
-    editBtn.setAttribute('data-index', String(index));
-    editBtn.setAttribute('title', 'Edit');
-    editBtn.appendChild(createEditIconSVG());
-
-    // Delete button
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-icon btn-danger cookie-delete-btn';
-    deleteBtn.setAttribute('data-index', String(index));
-    deleteBtn.setAttribute('title', 'Delete');
-    deleteBtn.appendChild(createCloseIconSVG());
-
-    actions.appendChild(editBtn);
-    actions.appendChild(deleteBtn);
-
-    header.appendChild(name);
-    header.appendChild(actions);
-
-    const value = document.createElement('div');
-    value.className = 'cookie-item-value';
-    value.textContent = cookie.value;
-
-    const meta = document.createElement('div');
-    meta.className = 'cookie-item-meta';
-    let metaText = `${cookie.domain} • ${cookie.path}`;
-    if (cookie.secure) metaText += ' • 🔒 Secure';
-    if (cookie.httpOnly) metaText += ' • 🚫 HttpOnly';
-    meta.textContent = metaText;
-
-    cookieItem.appendChild(header);
-    cookieItem.appendChild(value);
-    cookieItem.appendChild(meta);
-    cookieList.appendChild(cookieItem);
-  });
-}
-
-function filterCookies(query) {
-  const lowerQuery = query.toLowerCase();
-  const filtered = currentCookies.filter(cookie =>
-    cookie.name.toLowerCase().includes(lowerQuery) ||
-    cookie.domain.toLowerCase().includes(lowerQuery)
-  );
-  displayCookies(filtered);
-}
-
-// Export Cookies to JSON
-async function exportCookiesToJSON() {
-  try {
-    const response = await chrome.runtime.sendMessage({
-      action: 'getCookies',
-      url: state.currentUrl
-    });
-
-    const cookies = response.cookies || [];
-
-    if (cookies.length === 0) {
-      showToast('No cookies to export', 'warning');
-      return;
-    }
-
-    // Create clean export format
-    const exportData = cookies.map(c => ({
-      name: c.name,
-      value: c.value,
-      domain: c.domain,
-      path: c.path,
-      secure: c.secure,
-      httpOnly: c.httpOnly,
-      sameSite: c.sameSite,
-      expirationDate: c.expirationDate
-    }));
-
-    const jsonString = JSON.stringify(exportData, null, 2);
-    await copyToClipboard(jsonString);
-    showToast(`✅ ${cookies.length} cookies exported to clipboard!`, 'success');
-
-  } catch (error) {
-    console.error('Export error:', error);
-    showToast('❌ Failed to export cookies', 'error');
-  }
-}
-
-// Open Import Modal
-function openImportModal() {
-  const modal = document.getElementById('import-modal');
-  modal.style.display = 'flex';
-  document.getElementById('import-json-textarea').value = '';
-  document.getElementById('import-json-textarea').focus();
-
-  // Close on overlay click
-  setTimeout(() => {
-    modal.onclick = (e) => {
-      if (e.target === modal) closeImportModal();
-    };
-  }, 0);
-}
-
-// Close Import Modal
-function closeImportModal() {
-  const modal = document.getElementById('import-modal');
-  if (modal) {
-    modal.style.display = 'none';
-    modal.onclick = null;
-  }
-}
-
-// Import Cookies from JSON
-async function importCookiesFromJSON() {
-  const textarea = document.getElementById('import-json-textarea');
-  const jsonText = textarea.value.trim();
-
-  if (!jsonText) {
-    showToast('Please paste JSON data', 'warning');
-    return;
-  }
-
-  try {
-    const cookies = JSON.parse(jsonText);
-
-    if (!Array.isArray(cookies)) {
-      throw new Error('JSON must be an array of cookies');
-    }
-
-    let imported = 0;
-    let errors = 0;
-
-    for (const cookie of cookies) {
-      try {
-        const cookieData = {
-          name: cookie.name,
-          value: cookie.value,
-          domain: cookie.domain || new URL(state.currentUrl).hostname,
-          path: cookie.path || '/',
-          secure: cookie.secure || false,
-          httpOnly: cookie.httpOnly || false,
-          sameSite: cookie.sameSite || 'lax',
-          url: state.currentUrl
-        };
-
-        if (cookie.expirationDate) {
-          cookieData.expirationDate = cookie.expirationDate;
-        }
-
-        await chrome.runtime.sendMessage({
-          action: 'setCookie',
-          cookie: cookieData
-        });
-
-        imported++;
-      } catch (err) {
-        console.error('Failed to import cookie:', cookie.name, err);
-        errors++;
-      }
-    }
-
-    closeImportModal();
-    showToast(`✅ Imported ${imported} cookies${errors > 0 ? ` (${errors} failed)` : ''}`, 'success');
-    loadCookies();
-
-  } catch (error) {
-    console.error('Import parse error:', error);
-    showToast('❌ Invalid JSON format', 'error');
-  }
-}
-
-// Format Cookie Value (prettify JSON or decode URI)
-function formatCookieValue() {
-  const textarea = document.getElementById('edit-cookie-value');
-  let value = textarea.value;
-
-  try {
-    // Try to parse as JSON first
-    const parsed = JSON.parse(value);
-    textarea.value = JSON.stringify(parsed, null, 2);
-    showToast('✅ Formatted as JSON', 'success');
-  } catch (e) {
-    // Not JSON, try URL decoding
-    try {
-      const decoded = decodeURIComponent(value);
-      if (decoded !== value) {
-        textarea.value = decoded;
-        showToast('✅ URL decoded', 'success');
-      } else {
-        showToast('Value is already decoded', 'info');
-      }
-    } catch (err) {
-      showToast('Cannot format this value', 'warning');
-    }
-  }
-}
-
-function editCookie(index) {
-  editingCookie = currentCookies[index];
-
-  document.getElementById('edit-cookie-name').value = editingCookie.name;
-  // v3.0: Decode URL-encoded values for display
-  let displayValue = editingCookie.value;
-  try { displayValue = decodeURIComponent(editingCookie.value); } catch (_) { }
-  document.getElementById('edit-cookie-value').value = displayValue;
-  document.getElementById('edit-cookie-domain').value = editingCookie.domain;
-  document.getElementById('edit-cookie-path').value = editingCookie.path;
-  document.getElementById('edit-cookie-secure').checked = !!editingCookie.secure;
-  document.getElementById('edit-cookie-httponly').checked = !!editingCookie.httpOnly;
-
-  const isSession = !editingCookie.expirationDate;
-  document.getElementById('edit-cookie-session').checked = isSession;
-
-  // Show/hide expiry date input
-  const expiryGroup = document.getElementById('cookie-expiry-group');
-  if (expiryGroup) {
-    expiryGroup.style.display = isSession ? 'none' : 'block';
-  }
-
-  // Set expiry date if not session
-  if (!isSession && editingCookie.expirationDate) {
-    const expiryInput = document.getElementById('edit-cookie-expiry');
-    const date = new Date(editingCookie.expirationDate * 1000);
-    expiryInput.value = date.toISOString().slice(0, 16);
-  }
-
-  const sameSite = editingCookie.sameSite || 'no_restriction';
-  document.getElementById('edit-cookie-samesite').value = sameSite;
-
-  document.getElementById('cookie-edit-form').style.display = 'block';
-  document.getElementById('cookie-edit-form').scrollIntoView({ behavior: 'smooth' });
-}
-
-function showAddCookieForm() {
-  editingCookie = null;
-
-  const domain = new URL(state.currentUrl).hostname;
-
-  document.getElementById('edit-cookie-name').value = '';
-  document.getElementById('edit-cookie-value').value = '';
-  document.getElementById('edit-cookie-domain').value = domain;
-  document.getElementById('edit-cookie-path').value = '/';
-  document.getElementById('edit-cookie-secure').checked = true;
-  document.getElementById('edit-cookie-httponly').checked = false;
-  document.getElementById('edit-cookie-session').checked = true;
-  document.getElementById('edit-cookie-samesite').value = 'lax';
-
-  // Hide expiry picker by default
-  const expiryGroup = document.getElementById('cookie-expiry-group');
-  if (expiryGroup) expiryGroup.style.display = 'none';
-
-  document.getElementById('edit-cookie-name').readOnly = false;
-  document.getElementById('cookie-edit-form').style.display = 'block';
-  document.getElementById('cookie-edit-form').scrollIntoView({ behavior: 'smooth' });
-}
-
-async function saveCookie() {
-  // v3.0: Re-encode value if it was decoded on display
-  let rawValue = document.getElementById('edit-cookie-value').value;
-  // Only encode if the stored original was encoded (re-encode to match server expectation)
-  const cookieData = {
-    name: document.getElementById('edit-cookie-name').value,
-    value: rawValue,
-    domain: document.getElementById('edit-cookie-domain').value,
-    path: document.getElementById('edit-cookie-path').value,
-    secure: document.getElementById('edit-cookie-secure').checked,
-    httpOnly: document.getElementById('edit-cookie-httponly').checked,
-    sameSite: document.getElementById('edit-cookie-samesite').value,
-    session: document.getElementById('edit-cookie-session').checked,
-    url: state.currentUrl
-  };
-
-  const isSession = document.getElementById('edit-cookie-session').checked;
-  if (!isSession) {
-    const expiryInput = document.getElementById('edit-cookie-expiry');
-    if (expiryInput && expiryInput.value) {
-      // Convert datetime-local to timestamp
-      const expiryDate = new Date(expiryInput.value);
-      cookieData.expirationDate = Math.floor(expiryDate.getTime() / 1000);
-    } else {
-      // Fallback to 1 year if no date selected
-      cookieData.expirationDate = Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60);
-    }
-  }
-
-  try {
-    await chrome.runtime.sendMessage({
-      action: 'setCookie',
-      cookie: cookieData
-    });
-
-    showToast('✅ Cookie saved!', 'success');
-    cancelEdit();
-    loadCookies();
-
-  } catch (error) {
-    console.error('Cookie save error:', error);
-    showToast('❌ Failed to save cookie', 'error');
-  }
-}
-
-function cancelEdit() {
-  editingCookie = null;
-  document.getElementById('cookie-edit-form').style.display = 'none';
-}
-
-async function deleteCookie(index) {
-  const cookie = currentCookies[index];
-
-  try {
-    await chrome.runtime.sendMessage({
-      action: 'deleteCookie',
-      name: cookie.name,
-      url: state.currentUrl
-    });
-
-    showToast('Cookie deleted', 'success');
-    loadCookies();
-
-  } catch (error) {
-    console.error('Cookie delete error:', error);
-    showToast('❌ Failed to delete cookie', 'error');
-  }
-}
-
-async function deleteAllCookies() {
-  if (!confirm('Delete all cookies for this site?')) return;
-
-  try {
-    await chrome.runtime.sendMessage({
-      action: 'deleteAllCookies',
-      url: state.currentUrl
-    });
-
-    showToast('All cookies deleted', 'success');
-    loadCookies();
-
-  } catch (error) {
-    console.error('Cookie delete error:', error);
-    showToast('❌ Failed to delete cookies', 'error');
-  }
+  return window.WGCookieModule?.loadCookies(getPopupModuleContext());
 }
 
 // ============================================================================
@@ -1954,10 +1152,6 @@ function initializeUtilities() {
   // PiP Mode (button)
   const pipBtn = document.getElementById('pip-mode-btn');
   pipBtn?.addEventListener('click', activatePiP);
-
-  // Markdown Copier (button)
-  const markdownBtn = document.getElementById('copy-markdown-btn');
-  markdownBtn?.addEventListener('click', copyAsMarkdown);
 
   // Whitelist buttons
   const whitelistSiteBtn = document.getElementById('whitelist-site-btn');
@@ -2695,15 +1889,6 @@ async function activatePiP() {
   }
 }
 
-async function copyAsMarkdown() {
-  const title = state.currentTab.title;
-  const url = state.currentUrl;
-  const markdown = `[${title}](${url})`;
-
-  await copyToClipboard(markdown);
-  showToast('✅ Copied as Markdown!', 'success');
-}
-
 // ============================================================================
 // MODULE 8: SETTINGS
 // ============================================================================
@@ -2711,15 +1896,6 @@ async function copyAsMarkdown() {
 // ============================================================================
 // PRO FEATURES INIT (v3.0)
 // ============================================================================
-
-// UA Profiles
-const UA_PROFILES = {
-  'default': '',
-  'chrome-win': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'firefox-mac': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:122.0) Gecko/20100101 Firefox/122.0',
-  'safari-ios': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-  'edge-win': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0'
-};
 
 function initializeProFeatures() {
 const darkModeToggle = document.getElementById('toggle-dark-mode');
@@ -2802,7 +1978,7 @@ const nukeBtn = document.getElementById('nuke-history-btn');
       nukeBtn.textContent = '💣 Nuke';
     }
   });
-chrome.storage.local.get(['darkModeEnabled', 'popupBlockerEnabled', 'volumeLevel', 'selectedUA'], (r) => {
+chrome.storage.local.get(['darkModeEnabled', 'popupBlockerEnabled', 'volumeLevel'], (r) => {
     if (r.darkModeEnabled) {
       const el = document.getElementById('toggle-dark-mode');
       if (el) el.checked = true;
@@ -2816,10 +1992,6 @@ chrome.storage.local.get(['darkModeEnabled', 'popupBlockerEnabled', 'volumeLevel
       const label = document.getElementById('volume-boost-value');
       if (slider) slider.value = r.volumeLevel;
       if (label) label.textContent = r.volumeLevel + '%';
-    }
-    if (r.selectedUA) {
-      const sel = document.getElementById('ua-switcher');
-      if (sel) sel.value = r.selectedUA;
     }
   });
 }
@@ -2840,42 +2012,6 @@ function initializeSettings() {
     const isHidden = advancedSettings.style.display === 'none';
     advancedSettings.style.display = isHidden ? 'block' : 'none';
     toggleAdvancedBtn.textContent = isHidden ? 'Hide Advanced Settings' : 'Show Advanced Settings';
-  });
-const uaSelect = document.getElementById('ua-switcher');
-  uaSelect?.addEventListener('change', async (e) => {
-    const profileKey = e.target.value;
-    const uaString = UA_PROFILES[profileKey] || '';
-    await chrome.storage.local.set({ selectedUA: profileKey, customUA: uaString });
-    await chrome.runtime.sendMessage({ action: 'setUserAgent', ua: uaString });
-    if (isInjectableUrl(state.currentUrl)) {
-      try { await chrome.tabs.sendMessage(state.currentTab.id, { action: 'setUA', ua: uaString }); } catch (_) { }
-    }
-    showToast(`🎭 UA → ${profileKey === 'default' ? 'Default' : profileKey}`, 'success');
-    const maskToggle = document.getElementById('toggle-browser-mask');
-    if (maskToggle) maskToggle.checked = false;
-  });
-const browserMaskToggle = document.getElementById('toggle-browser-mask');
-  browserMaskToggle?.addEventListener('change', async (e) => {
-    const enabled = e.target.checked;
-    if (!enabled) {
-      await chrome.runtime.sendMessage({ action: 'setUserAgent', ua: 'default' });
-      await chrome.storage.local.set({ selectedUA: 'default', customUA: '' });
-      const uaSel = document.getElementById('ua-switcher');
-      if (uaSel) uaSel.value = 'default';
-      showToast('🎭 Browser Mask OFF — UA restored', 'info');
-      return;
-    }
-    const isChrome = navigator.userAgent.includes('Chrome') && !navigator.userAgent.includes('Edg/');
-    const swapKey = isChrome ? 'firefox-mac' : 'chrome-win';
-    const swapUA = UA_PROFILES[swapKey];
-    await chrome.runtime.sendMessage({ action: 'setUserAgent', ua: swapUA });
-    await chrome.storage.local.set({ selectedUA: swapKey, customUA: swapUA });
-    if (isInjectableUrl(state.currentUrl)) {
-      try { await chrome.tabs.sendMessage(state.currentTab.id, { action: 'setUA', ua: swapUA }); } catch (_) { }
-    }
-    const uaSel = document.getElementById('ua-switcher');
-    if (uaSel) uaSel.value = swapKey;
-    showToast(`🔄 Masking as ${swapKey}`, 'success');
   });
 
   // Load existing settings

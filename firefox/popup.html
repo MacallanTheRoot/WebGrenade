@@ -35,11 +35,12 @@
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
           </svg>
         </button>
-        <button class="sidebar-btn" data-module="color" title="Color Studio">
+        <button class="sidebar-btn" data-module="quicknotes" title="Quick Notes">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="8"></line>
-            <line x1="4" y1="12" x2="20" y2="12"></line>
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="12" y1="13" x2="16" y2="13"></line>
+            <line x1="12" y1="17" x2="16" y2="17"></line>
           </svg>
         </button>
         <button class="sidebar-btn" data-module="password" title="Security Hub">
@@ -260,38 +261,20 @@
       </div>
 
       <!-- ═══════════════════════════════════════════════════════════════════ -->
-      <!-- MODULE: COLOR STUDIO                                               -->
+      <!-- MODULE: QUICK NOTES / SCRATCHPAD                                   -->
       <!-- ═══════════════════════════════════════════════════════════════════ -->
-      <div class="module-content" data-module="color">
+      <div class="module-content" data-module="quicknotes">
         <div class="module-header">
-          <h2>🎨 Color Studio</h2>
-          <p class="module-subtitle">Pick colors from any webpage</p>
+          <h2>📒 Quick Notes / Scratchpad</h2>
+          <p class="module-subtitle">Persistent local notes with markdown append</p>
         </div>
-        <div class="color-display">
-          <div id="color-preview" class="color-preview"></div>
-          <div class="color-values">
-            <div class="color-value-item">
-              <label>HEX</label>
-              <input type="text" id="color-hex" class="input-field" readonly>
-            </div>
-            <div class="color-value-item">
-              <label>RGB</label>
-              <input type="text" id="color-rgb" class="input-field" readonly>
-            </div>
-          </div>
+        <div class="form-group">
+          <textarea id="quick-notes-textarea" class="input-field" rows="10" placeholder="Write quick notes here..."></textarea>
         </div>
-        <button id="eyedropper-btn" class="btn btn-primary btn-block">Pick Color from Page</button>
-        <div class="color-history">
-          <div class="history-header">
-            <h3 class="section-title">Color Palette</h3>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <button id="copy-palette-btn" class="btn-text" title="Copy all colors to clipboard">📋 Copy</button>
-              <button id="clear-color-history-btn" class="btn-text">Clear All</button>
-            </div>
-          </div>
-          <div id="color-history-grid" class="color-history-grid">
-            <div class="empty-state">No colors picked yet</div>
-          </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button id="quick-notes-save-btn" class="btn btn-primary btn-sm">Save</button>
+          <button id="quick-notes-append-md-btn" class="btn btn-secondary btn-sm">Append Last Markdown</button>
+          <button id="quick-notes-clear-btn" class="btn btn-secondary btn-sm">Clear</button>
         </div>
       </div>
 
@@ -329,8 +312,38 @@
             <label class="checkbox-label"><input type="checkbox" id="include-symbols" checked><span>Symbols
                 (!@#$%)</span></label>
           </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label>Minimum Character Rules</label>
+            <div class="control-row" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div class="form-group" style="margin:0;">
+                <label for="rule-min-uppercase">Uppercase Min</label>
+                <input type="number" id="rule-min-uppercase" class="input-field" min="0" max="64" value="0">
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label for="rule-min-lowercase">Lowercase Min</label>
+                <input type="number" id="rule-min-lowercase" class="input-field" min="0" max="64" value="0">
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label for="rule-min-numbers">Number Min</label>
+                <input type="number" id="rule-min-numbers" class="input-field" min="0" max="64" value="0">
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label for="rule-min-symbols">Symbol Min</label>
+                <input type="number" id="rule-min-symbols" class="input-field" min="0" max="64" value="0">
+              </div>
+            </div>
+          </div>
         </div>
         <button id="generate-password-btn" class="btn btn-primary btn-block">Generate Password</button>
+        <div class="download-history" style="margin-top: 10px;">
+          <div class="history-header">
+            <h3 class="section-title">Last 10 Passwords</h3>
+            <button id="security-nuke-btn" class="btn btn-danger btn-sm">Nuke Local Storage</button>
+          </div>
+          <div id="password-history-list" class="history-list">
+            <div class="empty-state">No generated passwords yet</div>
+          </div>
+        </div>
       </div>
 
       <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -345,6 +358,7 @@
           <input type="text" id="cookie-search" class="input-field" placeholder="Search by name or domain...">
           <div class="button-group">
             <button id="export-cookies-btn" class="btn btn-secondary" title="Export to JSON">📥 Export</button>
+            <button id="export-curl-btn" class="btn btn-secondary" title="Export as cURL">🧰 cURL</button>
             <button id="import-cookies-btn" class="btn btn-secondary" title="Import from JSON">📤 Import</button>
             <button id="add-cookie-btn" class="btn btn-secondary">Add Cookie</button>
             <button id="delete-all-cookies-btn" class="btn btn-danger">Delete All</button>
@@ -484,6 +498,15 @@
             <p>Copy page title and URL as markdown link</p>
           </div>
 
+          <!-- Color Studio -->
+          <div class="util-card">
+            <div class="util-header">
+              <h3>🎨 Color Studio</h3>
+              <button id="open-color-studio-btn" class="btn btn-secondary btn-sm">Open</button>
+            </div>
+            <p>Pick colors from any webpage and manage palette</p>
+          </div>
+
           <!-- Popup Blocker -->
           <div class="util-card">
             <div class="util-header">
@@ -497,6 +520,36 @@
             <div class="util-actions">
               <button id="whitelist-site-btn" class="btn btn-secondary btn-sm">Trust This Site</button>
               <button id="view-whitelist-btn" class="btn-text btn-sm">View List</button>
+            </div>
+          </div>
+
+          <!-- Focus Mode + Site Blocker -->
+          <div class="util-card">
+            <div class="util-header" style="align-items:flex-start;flex-direction:column;gap:6px;">
+              <h3>🍅 Focus Mode &amp; Site Blocker</h3>
+              <div id="focus-timer-display" class="strength-text">25:00 • Focus</div>
+            </div>
+            <div class="control-row" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;">
+              <div class="form-group" style="margin:0;">
+                <label for="focus-minutes">Focus (min)</label>
+                <input type="number" id="focus-minutes" class="input-field" min="1" max="120" value="25">
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label for="break-minutes">Break (min)</label>
+                <input type="number" id="break-minutes" class="input-field" min="1" max="60" value="5">
+              </div>
+            </div>
+            <div class="util-actions" style="margin-bottom:8px;">
+              <button id="focus-start-btn" class="btn btn-primary btn-sm">Start</button>
+              <button id="focus-pause-btn" class="btn btn-secondary btn-sm">Pause</button>
+              <button id="focus-reset-btn" class="btn btn-secondary btn-sm">Reset</button>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label for="focus-blocked-sites">Blocked Sites (one host per line)</label>
+              <textarea id="focus-blocked-sites" class="input-field" rows="4" placeholder="facebook.com\nyoutube.com"></textarea>
+            </div>
+            <div class="util-actions" style="margin-top:8px;">
+              <button id="focus-save-sites-btn" class="btn btn-secondary btn-sm">Save Block List</button>
             </div>
           </div>
 
@@ -537,6 +590,43 @@
 
         </div>
       </div>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- MODULE: COLOR STUDIO                                               -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <div class="module-content" data-module="color">
+        <div class="module-header">
+          <h2>🎨 Color Studio</h2>
+          <p class="module-subtitle">Pick colors from any webpage</p>
+        </div>
+        <div class="color-display">
+          <div id="color-preview" class="color-preview"></div>
+          <div class="color-values">
+            <div class="color-value-item">
+              <label>HEX</label>
+              <input type="text" id="color-hex" class="input-field" readonly>
+            </div>
+            <div class="color-value-item">
+              <label>RGB</label>
+              <input type="text" id="color-rgb" class="input-field" readonly>
+            </div>
+          </div>
+        </div>
+        <button id="eyedropper-btn" class="btn btn-primary btn-block">Pick Color from Page</button>
+        <div class="color-history">
+          <div class="history-header">
+            <h3 class="section-title">Color Palette</h3>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <button id="copy-palette-btn" class="btn-text" title="Copy all colors to clipboard">📋 Copy</button>
+              <button id="clear-color-history-btn" class="btn-text">Clear All</button>
+            </div>
+          </div>
+          <div id="color-history-grid" class="color-history-grid">
+            <div class="empty-state">No colors picked yet</div>
+          </div>
+        </div>
+      </div>
+
       <!-- ═══════════════════════════════════════════════════════════════════ -->
       <!-- MODULE: SETTINGS                                                   -->
       <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -557,6 +647,8 @@
               <option value="firefox-mac">Firefox 122 (macOS)</option>
               <option value="safari-ios">Safari 17 (iOS)</option>
               <option value="edge-win">Edge 121 (Windows)</option>
+              <option value="ie8-winxp">Internet Explorer 8 (Windows XP)</option>
+              <option value="ie11-win7">Internet Explorer 11 (Windows 7)</option>
             </select>
           </div>
           <div class="util-card" style="margin-top: 8px;">
@@ -611,7 +703,7 @@
         <div class="settings-section">
           <h3 class="section-title">About</h3>
           <div class="about-info">
-            <p><strong>WebGrenade</strong> v4.1.0</p>
+            <p><strong>WebGrenade</strong> v4.2.0</p>
             <p>Professional webmaster toolkit</p>
             <p>© 2026 <a href="https://github.com/MacallanTheRoot" target="_blank"
                 style="color: var(--primary); text-decoration: none;">MacallanTheRoot</a></p>
@@ -664,6 +756,13 @@
   </div>
 
   <script src="utils.js"></script>
+  <script type="module" src="module-ua-switcher.js"></script>
+  <script type="module" src="module-markdown-obsidian.js"></script>
+  <script type="module" src="module-quick-notes.js"></script>
+  <script type="module" src="module-securityhub-advanced.js"></script>
+  <script type="module" src="module-focus-siteblocker.js"></script>
+  <script src="module-media.js"></script>
+  <script src="module-cookie.js"></script>
   <script src="popup.js"></script>
 </body>
 

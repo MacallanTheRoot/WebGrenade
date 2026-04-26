@@ -70,6 +70,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeCookieManager();
     initializeRSSReader();
     initializeUtilities();
+    initializeUtilitiesButtons();
     initializeSettings();
     initializeProFeatures();  // v3.0 Pro Features
     initializeGeniusLyrics(); // Genius Lyrics module
@@ -152,6 +153,16 @@ function initializeSidebar() {
       showModule(btn.dataset.module);
     });
   });
+}
+
+function initializeUtilitiesButtons() {
+  // Open Color Studio from Utilities card
+  const openColorBtn = document.getElementById('open-color-studio-btn');
+  if (openColorBtn) {
+    openColorBtn.addEventListener('click', () => {
+      showModule('color');
+    });
+  }
 }
 
 function showModule(name) {
@@ -918,100 +929,7 @@ async function clearColorHistory() {
 // ============================================================================
 
 function initializeSecurityHub() {
-  const generateBtn = document.getElementById('generate-password-btn');
-  const copyBtn = document.getElementById('copy-password-btn');
-  const lengthSlider = document.getElementById('password-length');
-  const lengthValue = document.getElementById('password-length-value');
-
-  // Initialize with a password
-  generatePassword();
-
-  generateBtn?.addEventListener('click', generatePassword);
-  copyBtn?.addEventListener('click', () => {
-    const password = document.getElementById('generated-password').value;
-    if (password) {
-      copyToClipboard(password);
-      showToast('✅ Password copied!', 'success');
-    }
-  });
-
-  lengthSlider?.addEventListener('input', () => {
-    lengthValue.textContent = lengthSlider.value;
-    generatePassword();
-  });
-
-  // Re-generate on option change
-  document.querySelectorAll('#include-uppercase, #include-lowercase, #include-numbers, #include-symbols')
-    .forEach(checkbox => {
-      checkbox.addEventListener('change', generatePassword);
-    });
-}
-
-function generatePassword() {
-  const length = parseInt(document.getElementById('password-length').value);
-  const includeUppercase = document.getElementById('include-uppercase').checked;
-  const includeLowercase = document.getElementById('include-lowercase').checked;
-  const includeNumbers = document.getElementById('include-numbers').checked;
-  const includeSymbols = document.getElementById('include-symbols').checked;
-
-  let charset = '';
-  if (includeUppercase) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  if (includeLowercase) charset += 'abcdefghijklmnopqrstuvwxyz';
-  if (includeNumbers) charset += '0123456789';
-  if (includeSymbols) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
-
-  if (charset.length === 0) {
-    document.getElementById('generated-password').value = '';
-    updateStrengthMeter(0, 'none');
-    return;
-  }
-
-  let password = '';
-  const array = new Uint32Array(length);
-  crypto.getRandomValues(array);
-
-  for (let i = 0; i < length; i++) {
-    password += charset[array[i] % charset.length];
-  }
-
-  document.getElementById('generated-password').value = password;
-
-  // Calculate and display strength
-  const strength = calculatePasswordStrength(password, charset.length);
-  updateStrengthMeter(strength.score, strength.label);
-}
-
-function calculatePasswordStrength(password, charsetSize) {
-  // Calculate entropy: log2(charsetSize^length)
-  const entropy = password.length * Math.log2(charsetSize);
-
-  let score = 0;
-  let label = 'weak';
-
-  if (entropy < 40) {
-    score = 25;
-    label = 'weak';
-  } else if (entropy < 60) {
-    score = 50;
-    label = 'fair';
-  } else if (entropy < 80) {
-    score = 75;
-    label = 'good';
-  } else {
-    score = 100;
-    label = 'strong';
-  }
-
-  return { score, label, entropy };
-}
-
-function updateStrengthMeter(score, label) {
-  const strengthBar = document.getElementById('strength-bar');
-  const strengthText = document.getElementById('strength-text');
-
-  strengthBar.className = `strength-bar ${label}`;
-  strengthText.className = `strength-text ${label}`;
-  strengthText.textContent = label === 'none' ? '-' : label.toUpperCase();
+  // Legacy implementation moved to module-securityhub-advanced.js.
 }
 
 // ============================================================================
@@ -1955,10 +1873,6 @@ function initializeUtilities() {
   const pipBtn = document.getElementById('pip-mode-btn');
   pipBtn?.addEventListener('click', activatePiP);
 
-  // Markdown Copier (button)
-  const markdownBtn = document.getElementById('copy-markdown-btn');
-  markdownBtn?.addEventListener('click', copyAsMarkdown);
-
   // Whitelist buttons
   const whitelistSiteBtn = document.getElementById('whitelist-site-btn');
   whitelistSiteBtn?.addEventListener('click', addCurrentSiteToWhitelist);
@@ -2695,15 +2609,6 @@ async function activatePiP() {
   }
 }
 
-async function copyAsMarkdown() {
-  const title = state.currentTab.title;
-  const url = state.currentUrl;
-  const markdown = `[${title}](${url})`;
-
-  await copyToClipboard(markdown);
-  showToast('✅ Copied as Markdown!', 'success');
-}
-
 // ============================================================================
 // MODULE 8: SETTINGS
 // ============================================================================
@@ -2711,15 +2616,6 @@ async function copyAsMarkdown() {
 // ============================================================================
 // PRO FEATURES INIT (v3.0)
 // ============================================================================
-
-// UA Profiles
-const UA_PROFILES = {
-  'default': '',
-  'chrome-win': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'firefox-mac': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:122.0) Gecko/20100101 Firefox/122.0',
-  'safari-ios': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-  'edge-win': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0'
-};
 
 function initializeProFeatures() {
 const darkModeToggle = document.getElementById('toggle-dark-mode');
@@ -2802,7 +2698,7 @@ const nukeBtn = document.getElementById('nuke-history-btn');
       nukeBtn.textContent = '💣 Nuke';
     }
   });
-chrome.storage.local.get(['darkModeEnabled', 'popupBlockerEnabled', 'volumeLevel', 'selectedUA'], (r) => {
+chrome.storage.local.get(['darkModeEnabled', 'popupBlockerEnabled', 'volumeLevel'], (r) => {
     if (r.darkModeEnabled) {
       const el = document.getElementById('toggle-dark-mode');
       if (el) el.checked = true;
@@ -2816,10 +2712,6 @@ chrome.storage.local.get(['darkModeEnabled', 'popupBlockerEnabled', 'volumeLevel
       const label = document.getElementById('volume-boost-value');
       if (slider) slider.value = r.volumeLevel;
       if (label) label.textContent = r.volumeLevel + '%';
-    }
-    if (r.selectedUA) {
-      const sel = document.getElementById('ua-switcher');
-      if (sel) sel.value = r.selectedUA;
     }
   });
 }
@@ -2840,42 +2732,6 @@ function initializeSettings() {
     const isHidden = advancedSettings.style.display === 'none';
     advancedSettings.style.display = isHidden ? 'block' : 'none';
     toggleAdvancedBtn.textContent = isHidden ? 'Hide Advanced Settings' : 'Show Advanced Settings';
-  });
-const uaSelect = document.getElementById('ua-switcher');
-  uaSelect?.addEventListener('change', async (e) => {
-    const profileKey = e.target.value;
-    const uaString = UA_PROFILES[profileKey] || '';
-    await chrome.storage.local.set({ selectedUA: profileKey, customUA: uaString });
-    await chrome.runtime.sendMessage({ action: 'setUserAgent', ua: uaString });
-    if (isInjectableUrl(state.currentUrl)) {
-      try { await chrome.tabs.sendMessage(state.currentTab.id, { action: 'setUA', ua: uaString }); } catch (_) { }
-    }
-    showToast(`🎭 UA → ${profileKey === 'default' ? 'Default' : profileKey}`, 'success');
-    const maskToggle = document.getElementById('toggle-browser-mask');
-    if (maskToggle) maskToggle.checked = false;
-  });
-const browserMaskToggle = document.getElementById('toggle-browser-mask');
-  browserMaskToggle?.addEventListener('change', async (e) => {
-    const enabled = e.target.checked;
-    if (!enabled) {
-      await chrome.runtime.sendMessage({ action: 'setUserAgent', ua: 'default' });
-      await chrome.storage.local.set({ selectedUA: 'default', customUA: '' });
-      const uaSel = document.getElementById('ua-switcher');
-      if (uaSel) uaSel.value = 'default';
-      showToast('🎭 Browser Mask OFF — UA restored', 'info');
-      return;
-    }
-    const isChrome = navigator.userAgent.includes('Chrome') && !navigator.userAgent.includes('Edg/');
-    const swapKey = isChrome ? 'firefox-mac' : 'chrome-win';
-    const swapUA = UA_PROFILES[swapKey];
-    await chrome.runtime.sendMessage({ action: 'setUserAgent', ua: swapUA });
-    await chrome.storage.local.set({ selectedUA: swapKey, customUA: swapUA });
-    if (isInjectableUrl(state.currentUrl)) {
-      try { await chrome.tabs.sendMessage(state.currentTab.id, { action: 'setUA', ua: swapUA }); } catch (_) { }
-    }
-    const uaSel = document.getElementById('ua-switcher');
-    if (uaSel) uaSel.value = swapKey;
-    showToast(`🔄 Masking as ${swapKey}`, 'success');
   });
 
   // Load existing settings

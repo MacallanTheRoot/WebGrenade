@@ -3,10 +3,10 @@
 </div>
 
 <a name="en"></a>
-# 💣 WebGrenade v4.1.0
+# 💣 WebGrenade v4.2.0
 ### The Unified Power User Utility Suite
 
-![Version](https://img.shields.io/badge/version-4.1.0-orange?style=for-the-badge&logo=google-chrome)
+![Version](https://img.shields.io/badge/version-4.2.0-orange?style=for-the-badge&logo=google-chrome)
 ![Manifest](https://img.shields.io/badge/manifest-v3-green?style=for-the-badge&logo=webcomponents)
 ![License](https://img.shields.io/badge/license-MIT-orange?style=for-the-badge)
 ![Browser Support](https://img.shields.io/badge/browsers-chrome%20%7C%20firefox-blueviolet?style=for-the-badge)
@@ -15,29 +15,39 @@
 
 ---
 
-Welcome to the official repository of **WebGrenade**, a comprehensive browser utility suite designed for web developers, QA testers, and power users. WebGrenade consolidates essential productivity tools into a single, cohesive local dashboard, eliminating the need to install multiple single-function extensions.
+Welcome to the official repository of **WebGrenade**, a comprehensive browser utility suite designed for web developers, QA testers, and power users. WebGrenade keeps everything local and bundles the most-used browser tools into one dashboard so you do not need separate single-purpose extensions.
 
-## 🛠️ Unified Toolset Modules
+## 🛠️ What v4.2.0 Includes
 
-WebGrenade provides a wide array of tools to enhance your browsing, development, and testing workflows:
+WebGrenade provides a wide array of tools to enhance browsing, development, and testing workflows. The current dashboard includes:
 
-### Core Utilities
-- **📊 Unified Dashboard:** A central hub to access all tools instantly.
-- **🍪 Cookie Manager:** View, edit, add, and delete cookies for the current domain seamlessly.
-- **🛡️ Advanced Popup Blocker:** Block overlays, annoying popups, and aggressive consent modals.
-- **💻 User-Agent Switcher:** Test responsive designs or bypass UA filters by simulating different browsers.
+### Main Modules
+- **📊 Media Center:** Quick access hub for core browser utilities and media-related tools.
+- **🔗 Link Station:** Shorten URLs and generate QR codes for quick sharing.
+- **🎨 Color Studio:** Pick colors from any page, copy HEX/RGB values, and manage your palette.
+- **🔐 Security Hub:** Generate strong passwords and save the last generated entries locally.
+- **🍪 Cookie Manager:** View, edit, add, import, export, and delete cookies for the current domain.
+- **📰 RSS Reader:** Subscribe to feeds, refresh items, and manage saved sources.
+- **🛠️ Utilities:** Toggle the advanced page tools below from one grouped section.
+- **⚙️ Settings:** Configure browser mask, Obsidian paths, and extension preferences.
 
-### Media & UI Tools
-- **🔊 Volume Booster:** Enhance audio levels (0-300%) on tabs with native media and Web Audio players.
-- **🎨 Color Studio:** Use an eye-dropper tool to pick colors from any page and manage HEX/RGB palettes.
-- **🌙 Global Dark Mode:** Force high-contrast dark mode on any website intelligently.
-- **🔍 Advanced Image Search:** Quick reverse image search functionality via the context menu.
+### Utilities Inside the Dashboard
+- **🌙 Dark Mode:** Force a cleaner, high-contrast theme on supported pages.
+- **🛡️ Right Click Unlocker:** Remove common right-click and copy restrictions.
+- **📺 Picture-in-Picture:** Float supported video players above other windows.
+- **📝 Markdown Copier:** Copy the current page title and URL in markdown format.
+- **📒 Quick Notes / Scratchpad:** Keep a local note pad with autosave and markdown append support.
+- **🚫 Popup Blocker:** Block overlays, popups, and aggressive modal interruptions.
+- **🍅 Focus Mode + Site Blocker:** Run a Pomodoro-style timer while blocking selected sites.
+- **🗑️ Page Cleaner:** Hide distracting page chrome such as ads and sidebars.
+- **💣 History Cleaner:** Remove browsing history entries by domain or URL scope.
+- **🪄 Fake Input Filler:** Fill forms with test data for UI and QA workflows.
 
-### Productivity Tools
-- **📝 Fake Input Filler:** Quickly populate web forms with realistic dummy data for UI testing.
-- **📰 RSS Reader:** Stay updated with your favorite feeds directly from the dashboard with auto-discovery.
-- **🔗 Link Station:** Shorten URLs instantly and generate QR codes for quick sharing.
-- **🧹 History Cleaner:** Quickly erase your browsing history by domain or specific time range.
+### Background and Behavior
+- **Manifest V3 architecture:** Separate Chrome and Firefox builds with service-worker style background handling where supported.
+- **Local-first storage:** Preferences, palettes, notes, feeds, and other state live in `chrome.storage.local`.
+- **Cross-module integration:** Quick Notes listens for copied markdown, and Focus Mode keeps site blocking in sync with the timer.
+- **Browser-specific fallbacks:** Color picking, timer behavior, and background execution adapt to Chrome and Firefox differences.
 
 ---
 
@@ -100,10 +110,10 @@ WebGrenade is open source. Contributions are welcome! If you find a bug or have 
 ---
 
 <a name="tr"></a>
-# 💣 WebGrenade v4.1.0
+# 💣 WebGrenade v4.2.0
 ### Birleşik İleri Düzey Kullanıcı Araç Seti
 
-![Version](https://img.shields.io/badge/version-4.1.0-orange?style=for-the-badge&logo=google-chrome)
+![Version](https://img.shields.io/badge/version-4.2.0-orange?style=for-the-badge&logo=google-chrome)
 ![Manifest](https://img.shields.io/badge/manifest-v3-green?style=for-the-badge&logo=webcomponents)
 ![License](https://img.shields.io/badge/license-MIT-orange?style=for-the-badge)
 ![Browser Support](https://img.shields.io/badge/browsers-chrome%20%7C%20firefox-blueviolet?style=for-the-badge)
@@ -111,29 +121,39 @@ WebGrenade is open source. Contributions are welcome! If you find a bug or have 
 
 ---
 
-Web geliştiricileri, QA test uzmanları ve ileri düzey kullanıcılar (power users) için tasarlanmış kapsamlı tarayıcı araç seti **WebGrenade**'in resmi deposuna hoş geldiniz. WebGrenade, birden fazla tek işlevli eklenti kurma ihtiyacını ortadan kaldırarak temel üretkenlik araçlarını tek ve yerel olarak çalışan bir panoda birleştirir.
+Web geliştiricileri, QA test uzmanları ve ileri düzey kullanıcılar için tasarlanan kapsamlı tarayıcı araç seti **WebGrenade**'in resmi deposuna hoş geldiniz. WebGrenade tüm araçları yerelde tutar ve tek amaçlı birçok eklenti yerine tek bir pano sunar.
 
-## 🛠️ Birleşik Araç Seti Modülleri
+## 🛠️ 4.2.0 Sürümünde Neler Var?
 
-WebGrenade, tarama, geliştirme ve test iş akışlarınızı geliştirmek için geniş bir araç yelpazesi sunar:
+WebGrenade, tarama, geliştirme ve test iş akışlarınızı geliştirmek için geniş bir araç yelpazesi sunar. Mevcut pano şu modülleri içerir:
 
-### Temel Araçlar
-- **📊 Birleşik Pano:** Tüm araçlara anında erişim sağlayan merkezi bir kontrol paneli.
-- **🍪 Çerez Yöneticisi:** Geçerli domain için çerezleri sorunsuzca görüntüleyin, düzenleyin, ekleyin ve silin.
-- **🛡️ Gelişmiş Popup Engelleyici:** Arayüzü kaplayan (overlay) modalları, sinir bozucu açılır pencereleri ve agresif onay kutularını engelleyin.
-- **💻 Kullanıcı Ajanı (UA) Değiştirici:** Farklı tarayıcıları simüle ederek duyarlı tasarımları test edin veya UA filtrelerini aşın.
+### Ana Modüller
+- **📊 Media Center:** Temel tarayıcı araçları ve medya odaklı işlemler için hızlı erişim merkezi.
+- **🔗 Link Station:** URL kısaltma ve hızlı paylaşım için QR kod üretimi.
+- **🎨 Renk Stüdyosu:** Herhangi bir sayfadan renk seçin, HEX/RGB değerlerini kopyalayın ve paletinizi yönetin.
+- **🔐 Güvenlik Merkezi:** Güçlü şifreler üretin ve son oluşturulan şifreleri yerelde saklayın.
+- **🍪 Çerez Yöneticisi:** Geçerli domain için çerezleri görüntüleyin, düzenleyin, içe/dışa aktarın ve silin.
+- **📰 RSS Okuyucu:** Feed aboneliklerini yönetin, öğeleri yenileyin ve kayıtlı kaynakları takip edin.
+- **🛠️ Utilities:** Aşağıdaki gelişmiş araçları tek bir bölümden açıp kapatın.
+- **⚙️ Ayarlar:** Tarayıcı maskesi, Obsidian yolları ve eklenti tercihlerini yapılandırın.
 
-### Medya ve Arayüz Araçları
-- **🔊 Ses Güçlendirici:** Yerel medya öğeleri ve Web Audio oynatıcıları içeren sekmelerde ses seviyelerini (%0-300) artırın.
-- **🎨 Renk Stüdyosu:** Herhangi bir sayfadan renk seçmek ve HEX/RGB paletlerini yönetmek için damlalık aracını kullanın.
-- **🌙 Global Karanlık Mod:** Herhangi bir web sitesinde akıllı ve yüksek kontrastlı karanlık modu zorlayın.
-- **🔍 Gelişmiş Görsel Arama:** Sağ tık bağlam menüsü üzerinden hızlı tersine görsel arama işlevselliği.
+### Pano İçindeki Araçlar
+- **🌙 Dark Mode:** Desteklenen sayfalarda daha temiz ve yüksek kontrastlı görünüm sağlayın.
+- **🛡️ Sağ Tık Kilidi Açıcı:** Yaygın sağ tık ve kopyalama kısıtlamalarını kaldırın.
+- **📺 Picture-in-Picture:** Desteklenen video oynatıcıları diğer pencerelerin üstünde yüzdürün.
+- **📝 Markdown Copier:** Geçerli sayfanın başlığını ve URL'sini markdown formatında kopyalayın.
+- **📒 Quick Notes / Scratchpad:** Otomatik kayıt ve markdown ekleme destekli yerel not alanı kullanın.
+- **🚫 Popup Blocker:** Overlay, popup ve agresif modal kesintilerini engelleyin.
+- **🍅 Focus Mode + Site Blocker:** Seçilen siteleri engellerken Pomodoro tarzı zamanlayıcı çalıştırın.
+- **🗑️ Page Cleaner:** Reklamlar ve kenar çubukları gibi dikkat dağıtıcı öğeleri gizleyin.
+- **💣 History Cleaner:** Geçmiş kayıtlarını domain veya URL kapsamına göre temizleyin.
+- **🪄 Fake Input Filler:** UI ve QA akışları için test verileriyle formları doldurun.
 
-### Üretkenlik Araçları
-- **📝 Sahte Veri Doldurucu:** UI testleri için web formlarını anında gerçekçi ve sahte verilerle (isim, e-posta, tel vb.) doldurun.
-- **📰 RSS Okuyucu:** Otomatik keşif özelliği ile favori kaynaklarınızı doğrudan panodan takip edin.
-- **🔗 Link İstasyonu:** URL'leri anında kısaltın ve hızlı paylaşım için QR kodları oluşturun.
-- **🧹 Geçmiş Temizleyici:** Tarama geçmişinizi domaine veya belirli bir zaman aralığına göre hızlıca silin.
+### Davranış ve Mimari
+- **Manifest V3 mimarisi:** Chrome ve Firefox için ayrı derlemeler ve desteklenen yerlerde service worker tabanlı arka plan işleyişi.
+- **Yerel öncelikli kayıt:** Tercihler, paletler, notlar, feed'ler ve diğer durum bilgileri `chrome.storage.local` içinde tutulur.
+- **Modüller arası entegrasyon:** Quick Notes, kopyalanan markdown içeriğini dinler; Focus Mode zamanlayıcı ile site engellemesini eş zamanlı tutar.
+- **Tarayıcıya özel uyarlamalar:** Renk seçimi, zamanlayıcı davranışı ve arka plan çalışması Chrome ve Firefox farklarına göre uyarlanır.
 
 ---
 

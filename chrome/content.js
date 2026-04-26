@@ -13,19 +13,55 @@
     // globals
     let popupBlockerActive = false;
     let mutationObserver = null;
-    const audioContextMap = new WeakMap(); // maps media els to audio graphs
+    const mediaGraphMap = new Map(); // maps media elements to active audio graphs
     let volumeBoosterEnabled = false;
     let targetGainValue = 1.0;
     let volumeObserver = null;
+    let volumeCleanupTimer = null;
     let volumeBridgeInjected = false;
+    const inputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    const textareaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+    const selectValueSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
+    const inputCheckedSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'checked')?.set;
 
     // eyedropper state
     let eyedropperKeyHandler = null;
 
+    function isElementHidden(el) {
+        if (!el || !el.isConnected) return true;
+        const cs = window.getComputedStyle(el);
+        return cs.display === 'none' || cs.visibility === 'hidden';
+    }
+
+    function teardownMediaGraph(el) {
+        const entry = mediaGraphMap.get(el);
+        if (!entry) return;
+
+        try { entry.source.disconnect(); } catch (_) { }
+        try { entry.gainNode.disconnect(); } catch (_) { }
+        try {
+            if (entry.ctx && entry.ctx.state !== 'closed') {
+                entry.ctx.close().catch(() => { });
+            }
+        } catch (_) { }
+
+        mediaGraphMap.delete(el);
+    }
+
+    function cleanupUnusedMediaContexts() {
+        mediaGraphMap.forEach((_, el) => {
+            if (!el.isConnected || isElementHidden(el)) {
+                teardownMediaGraph(el);
+            }
+        });
+    }
+
     function applyBoostToMediaElement(el) {
         try {
-            if (audioContextMap.has(el)) {
-                const entry = audioContextMap.get(el);
+            if (!el || !el.isConnected || isElementHidden(el)) return false;
+
+            if (mediaGraphMap.has(el)) {
+                const entry = mediaGraphMap.get(el);
                 entry.gainNode.gain.value = targetGainValue;
                 if (entry.ctx.state === 'suspended') {
                     entry.ctx.resume().catch(err =>
@@ -43,7 +79,7 @@
             gainNode.gain.value = targetGainValue;
             source.connect(gainNode);
             gainNode.connect(ctx.destination);
-            audioContextMap.set(el, { ctx, gainNode, source });
+            mediaGraphMap.set(el, { ctx, gainNode, source });
 
             ctx.resume().catch(err =>
                 console.warn('[WebGrenade] ctx.resume():', err.message));
@@ -81,12 +117,32 @@
                         node.querySelectorAll('video, audio').forEach(applyBoostToMediaElement);
                     }
                 });
+
+                mutation.removedNodes.forEach(node => {
+                    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+                    if (node.matches && node.matches('video, audio')) {
+                        teardownMediaGraph(node);
+                    }
+
+                    if (node.querySelectorAll) {
+                        node.querySelectorAll('video, audio').forEach(teardownMediaGraph);
+                    }
+                });
             });
+
+            cleanupUnusedMediaContexts();
         });
 
         const target = document.body || document.documentElement;
         if (target) {
             volumeObserver.observe(target, { childList: true, subtree: true });
+        }
+
+        if (!volumeCleanupTimer) {
+            volumeCleanupTimer = window.setInterval(() => {
+                if (volumeBoosterEnabled) cleanupUnusedMediaContexts();
+            }, 5000);
         }
     }
 
@@ -94,6 +150,45 @@
         if (!volumeObserver) return;
         volumeObserver.disconnect();
         volumeObserver = null;
+
+        if (volumeCleanupTimer) {
+            clearInterval(volumeCleanupTimer);
+            volumeCleanupTimer = null;
+        }
+    }
+
+    function setControlValueCompat(el, val) {
+        if (el instanceof HTMLInputElement && inputValueSetter) {
+            inputValueSetter.call(el, val);
+        } else if (el instanceof HTMLTextAreaElement && textareaValueSetter) {
+            textareaValueSetter.call(el, val);
+        } else if (el instanceof HTMLSelectElement && selectValueSetter) {
+            selectValueSetter.call(el, val);
+        } else {
+            el.value = val;
+        }
+
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function setCheckedCompat(el, checked) {
+        if (inputCheckedSetter) {
+            inputCheckedSetter.call(el, checked);
+        } else {
+            el.checked = checked;
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function getDarkModeCssText() {
+        return [
+            '@media (prefers-color-scheme: light) {',
+            '  html { filter: invert(1) hue-rotate(180deg) !important; }',
+            '  img, video, picture, canvas, svg, iframe { filter: invert(1) hue-rotate(180deg) !important; }',
+            '}'
+        ].join('\n');
     }
 
     function injectVolumeBridgeScript() {
@@ -189,6 +284,23 @@
         }
     }
 
+    function isPopupOverlay(node, overlayKeywords, safeRoles, safeTags) {
+        if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+        if (safeTags.has(node.tagName)) return false;
+        if (node.closest && node.closest('header, nav, aside')) return false;
+
+        const role = (node.getAttribute('role') || '').toLowerCase();
+        if (safeRoles.has(role)) return false;
+
+        const cs = window.getComputedStyle(node);
+        const zIndex = parseInt(cs.zIndex, 10);
+        if (cs.position !== 'fixed' || !(zIndex > 999)) return false;
+        if (cs.pointerEvents === 'none') return false;
+
+        const text = (node.textContent || '').slice(0, 1000);
+        return overlayKeywords.test(text);
+    }
+
     // naive modal hider based on z-index and keywords
     function startOverlayObserver() {
         if (mutationObserver) return;
@@ -200,21 +312,11 @@
         mutationObserver = new MutationObserver((mutations) => {
             mutations.forEach(mutation => {
                 mutation.addedNodes.forEach(node => {
-                    if (node.nodeType !== 1) return;
                     try {
-                        if (safeTags.has(node.tagName)) return;
-                        const role = (node.getAttribute('role') || '').toLowerCase();
-                        if (safeRoles.has(role)) return;
-
-                        const cs = window.getComputedStyle(node);
-                        const zIndex = parseInt(cs.zIndex, 10);
-                        if (cs.position !== 'fixed' || !(zIndex > 999)) return;
-
-                        const text = (node.textContent || '').slice(0, 1000);
-                        if (!overlayKeywords.test(text)) return;
+                        if (!isPopupOverlay(node, overlayKeywords, safeRoles, safeTags)) return;
 
                         node.style.setProperty('display', 'none', 'important');
-                        console.log('[WebGrenade] Overlay modal hidden —', node.tagName, zIndex);
+                        console.log('[WebGrenade] Overlay modal hidden —', node.tagName);
                     } catch (_) { }
                 });
             });
@@ -343,10 +445,7 @@
                 if (!el) {
                     el = document.createElement('style');
                     el.id = 'wg-dark-mode';
-                    el.textContent = [
-                        'html { filter: invert(1) hue-rotate(180deg) !important; }',
-                        'img, video, picture, canvas, svg, iframe { filter: invert(1) hue-rotate(180deg) !important; }'
-                    ].join('\n');
+                    el.textContent = getDarkModeCssText();
                     (document.head || document.documentElement).appendChild(el);
                 }
                 sendResponse({ success: true });
@@ -384,10 +483,12 @@
 
                 const mediaEls = Array.from(document.querySelectorAll('video, audio'));
                 mediaEls.forEach(el => {
-                    if (audioContextMap.has(el)) {
-                        audioContextMap.get(el).gainNode.gain.value = 1.0;
+                    if (mediaGraphMap.has(el)) {
+                        mediaGraphMap.get(el).gainNode.gain.value = 1.0;
                     }
                 });
+                cleanupUnusedMediaContexts();
+                mediaGraphMap.forEach((_, el) => teardownMediaGraph(el));
                 sendResponse({ success: true });
                 break;
             }
@@ -570,18 +671,13 @@
                         } else {
                             val = `SampleData_${rStr()}`;
                         }
-                        // Assign and dispatch
-                        el.value = val;
-                        el.dispatchEvent(new Event('input', { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        setControlValueCompat(el, val);
                         filledCount++;
                     });
                     
                     document.querySelectorAll('textarea').forEach(el => {
                         if (!isVisible(el) || el.readOnly || el.disabled) return;
-                        el.value = `Auto-generated test comment.\nRandom ID: ${rStr()}-${rNum(1000,9999)}`;
-                        el.dispatchEvent(new Event('input', { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        setControlValueCompat(el, `Auto-generated test comment.\nRandom ID: ${rStr()}-${rNum(1000,9999)}`);
                         filledCount++;
                     });
                     
@@ -589,8 +685,8 @@
                         if (!isVisible(el) || el.disabled) return;
                         const options = Array.from(el.options).filter(o => !o.disabled && o.value);
                         if (options.length > 0) {
-                            el.selectedIndex = options[rNum(0, options.length - 1)].index;
-                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            const selected = options[rNum(0, options.length - 1)];
+                            setControlValueCompat(el, selected.value);
                             filledCount++;
                         }
                     });
@@ -598,13 +694,11 @@
                     document.querySelectorAll('input[type="checkbox"], input[type="radio"]').forEach(el => {
                         if (!isVisible(el) || el.disabled) return;
                         if (el.type === 'checkbox') {
-                            el.checked = Math.random() > 0.5;
-                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            setCheckedCompat(el, Math.random() > 0.5);
                             filledCount++;
                         } else if (el.type === 'radio') {
                             if (Math.random() > 0.5) {
-                                el.checked = true;
-                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                setCheckedCompat(el, true);
                                 filledCount++;
                             }
                         }
@@ -627,17 +721,14 @@
     // boot state from local storage
     try {
         chrome.storage.local.get(
-            ['darkModeEnabled', 'popupBlockerEnabled', 'customUA'],
+            ['darkModeEnabled', 'popupBlockerEnabled', 'customUA', 'popupTempWhitelist'],
             (result) => {
                 if (result.darkModeEnabled) {
                     let el = document.getElementById('wg-dark-mode');
                     if (!el) {
                         el = document.createElement('style');
                         el.id = 'wg-dark-mode';
-                        el.textContent = [
-                            'html { filter: invert(1) hue-rotate(180deg) !important; }',
-                            'img, video, picture, canvas, svg, iframe { filter: invert(1) hue-rotate(180deg) !important; }'
-                        ].join('\n');
+                        el.textContent = getDarkModeCssText();
                         (document.head || document.documentElement).appendChild(el);
                     }
                 }
@@ -646,6 +737,23 @@
                     popupBlockerActive = true;
                     injectViaScriptSrc();   // CSP-safe main-world injection
                     startOverlayObserver(); // isolated-world CSS overlay blocker
+                }
+
+                if (Array.isArray(result.popupTempWhitelist) && result.popupTempWhitelist.length > 0) {
+                    const now = Date.now();
+                    const currentHost = window.location.hostname;
+                    result.popupTempWhitelist.forEach((entry) => {
+                        if (!entry || !entry.expiresAt || entry.expiresAt <= now) return;
+
+                        if (entry.domain && entry.domain !== currentHost) return;
+                        const ttlMs = Math.max(1000, entry.expiresAt - now);
+                        window.dispatchEvent(new CustomEvent('__wgTempAllowPopup', {
+                            detail: {
+                                url: entry.url || window.location.href,
+                                ttlMs
+                            }
+                        }));
+                    });
                 }
 
                 if (result.customUA && result.customUA !== 'default') {
@@ -710,7 +818,16 @@
             'cursor:pointer', 'font-size:13px', 'font-weight:bold',
         ].join(';');
         allowBtn.addEventListener('click', () => {
-            if (url) chrome.runtime.sendMessage({ action: 'open_allowed_popup', url });
+            if (url) {
+                const ttlMs = 120000;
+
+                window.dispatchEvent(new CustomEvent('__wgTempAllowPopup', {
+                    detail: { url, ttlMs }
+                }));
+
+                chrome.runtime.sendMessage({ action: 'addTemporaryPopupWhitelist', url, ttlMs }).catch(() => { });
+                chrome.runtime.sendMessage({ action: 'open_allowed_popup', url }).catch(() => { });
+            }
             dismiss();
         });
 
